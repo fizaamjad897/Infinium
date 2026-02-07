@@ -1,0 +1,10 @@
+chromadb
+langchain
+langchain-community
+langchain-ollama
+sentence-transformers
+uvicorn
+fastapi
+python-multipart
+pydantic
+pydantic-settings
