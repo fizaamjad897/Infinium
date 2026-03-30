@@ -1,0 +1,60 @@
+version: "3.9"
+
+services:
+  # ── Ollama (Local LLM Server) ──
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    # Uncomment for NVIDIA GPU support:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # ── Infinium Backend (FastAPI + RAG) ──
+  backend:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - CHROMA_DB_PATH=/app/chroma_db
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
+      - GITHUB_REDIRECT_URI=${GITHUB_REDIRECT_URI:-http://localhost:8000/api/auth/github/callback}
+      - JWT_SECRET=${JWT_SECRET:-infinium-dev-secret}
+      - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET:-}
+    volumes:
+      - chroma_data:/app/chroma_db
+      - repo_cache:/app/repo_cache
+      - app_data:/app/data
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
+  # ── PostgreSQL (for production — user data, query logs) ──
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: infinium
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-infinium_secret}
+      POSTGRES_DB: infinium
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
+  chroma_data:
+  repo_cache:
+  app_data:
+  postgres_data:
