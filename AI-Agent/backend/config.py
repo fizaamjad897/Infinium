@@ -16,8 +16,15 @@ load_dotenv(ENV_FILE)
 class Settings(BaseSettings):
     # ── Ollama ──
     OLLAMA_BASE_URL: str = "http://localhost:11434"
-    LLM_MODEL: str = "llama3:latest"
+    LLM_MODEL: str = "minimax-m2.7:cloud"
+    CODE_REASONING_MODEL: str = "kimi-k2.5:cloud"
     EMBED_MODEL: str = "nomic-embed-text"
+
+    # ── Dual-Model Pipeline ──
+    USE_DUAL_MODEL: bool = True          # Use kimi for reasoning + minimax for synthesis
+    REASONING_TEMPERATURE: float = 0.2   # Slightly higher for deeper reasoning
+    LLM_TEMPERATURE: float = 0.1         # Low for precise final answers
+    LLM_CONTEXT_WINDOW: int = 8192
 
     # ── ChromaDB ──
     CHROMA_DB_PATH: str = str(PROJECT_ROOT / "chroma_db")
@@ -30,8 +37,10 @@ class Settings(BaseSettings):
     # ── RAG ──
     RAG_TOP_K: int = 8
     RELEVANCE_THRESHOLD: float = 0.35
-    LLM_TEMPERATURE: float = 0.1
-    LLM_CONTEXT_WINDOW: int = 8192
+
+    # ── Conversation ──
+    MAX_CONVERSATION_TURNS: int = 10
+    CONVERSATION_TTL_HOURS: int = 24
 
     # ── GitHub OAuth ──
     GITHUB_CLIENT_ID: str = ""
