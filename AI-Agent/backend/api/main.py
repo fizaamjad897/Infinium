@@ -43,8 +43,21 @@ app.include_router(repos_router)
 # ── Startup Event ──
 @app.on_event("startup")
 def on_startup():
-    from backend.config import ensure_directories
+    from backend.config import ensure_directories, settings
     ensure_directories()
+
+    # Cleanup expired conversations
+    try:
+        from backend.rag.conversation import cleanup_expired
+        cleanup_expired()
+    except Exception:
+        pass
+
+    # Log model configuration
+    print(f"   🤖 LLM Model:       {settings.LLM_MODEL}")
+    print(f"   🧠 Reasoning Model: {settings.CODE_REASONING_MODEL}")
+    print(f"   📐 Embed Model:     {settings.EMBED_MODEL}")
+    print(f"   🔀 Dual-Model:      {'ON' if settings.USE_DUAL_MODEL else 'OFF'}")
 
 
 # ── Health & Root ──

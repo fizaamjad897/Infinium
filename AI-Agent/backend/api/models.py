@@ -30,8 +30,10 @@ class QueryRequest(BaseModel):
     repo_name: str = Field(..., description="Repository to search in")
     use_hybrid: bool = Field(True, description="Use hybrid (semantic + keyword) search")
     use_expansion: bool = Field(False, description="Use LLM query expansion")
+    use_dual_model: Optional[bool] = Field(None, description="Use dual-model pipeline (None = use config default)")
     top_k: Optional[int] = Field(None, description="Number of context chunks to retrieve")
     model: Optional[str] = Field(None, description="Override LLM model")
+    conversation_id: Optional[str] = Field(None, description="Conversation ID for follow-up questions")
 
 
 class QueryAllRequest(BaseModel):
@@ -39,8 +41,10 @@ class QueryAllRequest(BaseModel):
     repo_names: Optional[list[str]] = Field(None, description="List of repos to search (None = ALL repos)")
     use_hybrid: bool = Field(True, description="Use hybrid search")
     use_expansion: bool = Field(False, description="Use LLM query expansion")
+    use_dual_model: Optional[bool] = Field(None, description="Use dual-model pipeline (None = use config default)")
     top_k: Optional[int] = Field(None, description="Number of chunks to retrieve across all repos")
     model: Optional[str] = Field(None, description="Override LLM model")
+    conversation_id: Optional[str] = Field(None, description="Conversation ID for follow-up questions")
 
 
 class SourceInfo(BaseModel):
@@ -48,6 +52,24 @@ class SourceInfo(BaseModel):
     repo: str = ""
     type: str = "code"
     relevance: float = 0.0
+
+
+class ReasoningStepResponse(BaseModel):
+    step_name: str
+    model_used: str = ""
+    duration_ms: int = 0
+    input_preview: str = ""
+    output_preview: str = ""
+    chunks_count: int = 0
+    status: str = "complete"
+
+
+class ReasoningTraceResponse(BaseModel):
+    trace_id: str = ""
+    query: str = ""
+    steps: list[ReasoningStepResponse] = []
+    total_duration_ms: int = 0
+    models_used: list[str] = []
 
 
 class QueryResponse(BaseModel):
@@ -60,6 +82,18 @@ class QueryResponse(BaseModel):
     repos_searched: Optional[list[str]] = None
     repos_with_results: Optional[list[str]] = None
     total_duration_ms: int = 0
+    reasoning_trace: Optional[ReasoningTraceResponse] = None
+
+
+# ── Conversation ──
+
+class ConversationStartRequest(BaseModel):
+    repo_name: str = Field("", description="Repository context for this conversation")
+
+
+class ConversationStartResponse(BaseModel):
+    conversation_id: str
+    message: str = "Conversation started"
 
 
 # ── Feedback ──

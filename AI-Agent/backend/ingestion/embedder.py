@@ -36,7 +36,7 @@ def _ollama_embed(text: str) -> list[float]:
     try:
         resp = requests.post(
             f"{settings.OLLAMA_BASE_URL}/api/embeddings",
-            json={"model": settings.LLM_MODEL, "prompt": text},
+            json={"model": settings.EMBED_MODEL, "prompt": text},
             timeout=30,
         )
         resp.raise_for_status()
