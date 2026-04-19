@@ -3,6 +3,7 @@ User Model & Store
 - Lightweight JSON file-based user storage for prototype
 - In production, replace with PostgreSQL
 """
+from __future__ import annotations
 import os
 import json
 from datetime import datetime

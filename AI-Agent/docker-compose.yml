@@ -1,7 +1,7 @@
 version: "3.9"
 
 services:
-  # ── Ollama (Local LLM Server) ──
+  # ── Ollama (Local/Cloud LLM Server) ──
   ollama:
     image: ollama/ollama:latest
     ports:
@@ -9,7 +9,13 @@ services:
     volumes:
       - ollama_data:/root/.ollama
     restart: unless-stopped
-    # After first deploy, pull the models:
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    # After first deploy, pull models:
     # docker exec infinium-ollama-1 ollama pull nomic-embed-text
     # docker exec infinium-ollama-1 ollama run minimax-m2.7:cloud
     # docker exec infinium-ollama-1 ollama run kimi-k2.5:cloud
@@ -24,7 +30,8 @@ services:
       - LLM_MODEL=${LLM_MODEL:-minimax-m2.7:cloud}
       - CODE_REASONING_MODEL=${CODE_REASONING_MODEL:-kimi-k2.5:cloud}
       - EMBED_MODEL=${EMBED_MODEL:-nomic-embed-text}
-      - USE_DUAL_MODEL=${USE_DUAL_MODEL:-true}
+      # OFF by default for speed — user can pass use_dual_model=true per-request
+      - USE_DUAL_MODEL=${USE_DUAL_MODEL:-false}
       - CHROMA_DB_PATH=/app/chroma_db
       - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
       - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
@@ -36,10 +43,17 @@ services:
       - repo_cache:/app/repo_cache
       - app_data:/app/data
     depends_on:
-      - ollama
+      ollama:
+        condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
 
-  # ── PostgreSQL (for production — user data, query logs) ──
+  # ── PostgreSQL (user data, query logs) ──
   postgres:
     image: postgres:16-alpine
     environment:
@@ -51,6 +65,11 @@ services:
     ports:
       - "5432:5432"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U infinium"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   ollama_data:

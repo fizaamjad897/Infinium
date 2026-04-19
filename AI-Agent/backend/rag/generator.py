@@ -49,44 +49,54 @@ def _call_ollama_chat(
     temperature: float = 0.1,
     context_window: int = 8192,
     timeout: int = 300,
+    retries: int = 2,
 ) -> dict:
-    """Call Ollama /api/chat endpoint.
+    """Call Ollama /api/chat endpoint with retry on transient errors.
 
     Returns: {"content": str, "tokens": int, "duration_ms": int}
     """
-    try:
-        response = requests.post(
-            f"{settings.OLLAMA_BASE_URL}/api/chat",
-            json={
-                "model": model,
-                "messages": messages,
-                "stream": False,
-                "options": {
-                    "temperature": temperature,
-                    "num_ctx": context_window,
+    import time
+    last_error = None
+    for attempt in range(retries + 1):
+        try:
+            response = requests.post(
+                f"{settings.OLLAMA_BASE_URL}/api/chat",
+                json={
+                    "model": model,
+                    "messages": messages,
+                    "stream": False,
+                    "options": {
+                        "temperature": temperature,
+                        "num_ctx": context_window,
+                    },
                 },
-            },
-            timeout=timeout,
-        )
-        response.raise_for_status()
-        result = response.json()
+                timeout=timeout,
+            )
+            response.raise_for_status()
+            result = response.json()
 
-        return {
-            "content": result.get("message", {}).get("content", ""),
-            "tokens": result.get("eval_count", 0),
-            "duration_ms": result.get("total_duration", 0) // 1_000_000,
-        }
-    except requests.exceptions.Timeout:
-        return {"content": "", "tokens": 0, "duration_ms": 0, "error": "Request timed out"}
-    except requests.exceptions.ConnectionError:
-        return {
-            "content": "",
-            "tokens": 0,
-            "duration_ms": 0,
-            "error": f"Cannot connect to Ollama at {settings.OLLAMA_BASE_URL}. Make sure Ollama is running.",
-        }
-    except Exception as e:
-        return {"content": "", "tokens": 0, "duration_ms": 0, "error": str(e)}
+            return {
+                "content": result.get("message", {}).get("content", ""),
+                "tokens": result.get("eval_count", 0),
+                "duration_ms": result.get("total_duration", 0) // 1_000_000,
+            }
+        except requests.exceptions.Timeout:
+            return {"content": "", "tokens": 0, "duration_ms": 0, "error": "Request timed out"}
+        except requests.exceptions.ConnectionError:
+            return {
+                "content": "",
+                "tokens": 0,
+                "duration_ms": 0,
+                "error": f"Cannot connect to Ollama at {settings.OLLAMA_BASE_URL}. Make sure Ollama is running.",
+            }
+        except Exception as e:
+            last_error = str(e)
+            if attempt < retries:
+                time.sleep(3 * (attempt + 1))  # 3s, 6s backoff
+                continue
+            return {"content": "", "tokens": 0, "duration_ms": 0, "error": last_error}
+    return {"content": "", "tokens": 0, "duration_ms": 0, "error": last_error}
+
 
 
 def build_context_block(chunks: list[dict]) -> str:

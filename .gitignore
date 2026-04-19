@@ -1,3 +1,42 @@
-AI-Agent\.env
-AI-Agent\.env.example
-AI-Agent\.gitignore
+# Environment files — NEVER commit these
+AI-Agent/.env
+.env
+**/.env
+
+# Keep the example template
+!AI-Agent/.env.example
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# ChromaDB data
+AI-Agent/chroma_db/
+chroma_db/
+
+# Repo cache (cloned repos)
+AI-Agent/repo_cache/
+repo_cache/
+
+# App data / ingestion status
+AI-Agent/data/
+data/
+
+# macOS
+.DS_Store
+
+# Node / frontend
+node_modules/
+.next/
+
+# IDE
+.vscode/
+.idea/

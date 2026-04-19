@@ -93,7 +93,7 @@ async def github_webhook(
     # Verify webhook signature if secret is configured
     if settings.GITHUB_WEBHOOK_SECRET:
         secret = settings.GITHUB_WEBHOOK_SECRET.encode()
-        expected = "sha256=" + hmac.new(secret, body, hashlib.sha256).hexdigest()
+        expected = "sha256=" + hmac.new(key=secret, msg=body, digestmod=hashlib.sha256).hexdigest()
         if not hmac.compare_digest(expected, x_hub_signature_256 or ""):
             raise HTTPException(status_code=401, detail="Invalid webhook signature")
     
