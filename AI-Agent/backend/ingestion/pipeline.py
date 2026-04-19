@@ -4,6 +4,7 @@ Ingestion Pipeline Orchestrator
 - Supports both GitHub URLs and local folders
 - Tracks ingestion status
 """
+from __future__ import annotations
 import os
 import json
 import time

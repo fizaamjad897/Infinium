@@ -21,10 +21,12 @@ class Settings(BaseSettings):
     EMBED_MODEL: str = "nomic-embed-text"
 
     # ── Dual-Model Pipeline ──
-    USE_DUAL_MODEL: bool = True          # Use kimi for reasoning + minimax for synthesis
-    REASONING_TEMPERATURE: float = 0.2   # Slightly higher for deeper reasoning
-    LLM_TEMPERATURE: float = 0.1         # Low for precise final answers
-    LLM_CONTEXT_WINDOW: int = 8192
+    # OFF by default for speed — enable per-request with use_dual_model=true
+    # Dual-model adds a full extra LLM call (kimi reasoning step) which doubles latency
+    USE_DUAL_MODEL: bool = False
+    REASONING_TEMPERATURE: float = 0.1
+    LLM_TEMPERATURE: float = 0.1         # Low for precise, deterministic answers
+    LLM_CONTEXT_WINDOW: int = 4096       # 4096 is plenty for RAG; 8192 doubles wait time
 
     # ── ChromaDB ──
     CHROMA_DB_PATH: str = str(PROJECT_ROOT / "chroma_db")
@@ -35,8 +37,8 @@ class Settings(BaseSettings):
     MAX_COMMITS: int = 500
 
     # ── RAG ──
-    RAG_TOP_K: int = 8
-    RELEVANCE_THRESHOLD: float = 0.35
+    RAG_TOP_K: int = 5               # Fewer chunks → smaller prompt → faster LLM
+    RELEVANCE_THRESHOLD: float = 0.40  # Higher threshold filters weak matches
 
     # ── Conversation ──
     MAX_CONVERSATION_TURNS: int = 10
