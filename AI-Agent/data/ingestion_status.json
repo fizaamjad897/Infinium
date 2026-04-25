@@ -58,5 +58,36 @@
     "commits_processed": 4,
     "total_chunks": 18,
     "elapsed_seconds": 7.7
+  },
+  "FGSM-Attack-": {
+    "status": "complete",
+    "updated_at": "2026-04-25T17:48:05.492153",
+    "repo_url": "https://github.com/RaveehaMohsin/FGSM-Attack-",
+    "error": "Validation error: name: Expected a name containing 3-512 characters from [a-zA-Z0-9._-], starting and ending with a character in [a-zA-Z0-9]. Got: FGSM_Attack_",
+    "chunks_stored": 49,
+    "files_processed": 17,
+    "commits_processed": 5,
+    "total_chunks": 49,
+    "elapsed_seconds": 100.1
+  },
+  "Skill-Tracker": {
+    "status": "complete",
+    "updated_at": "2026-04-25T19:55:26.408285",
+    "repo_url": "https://github.com/RaveehaMohsin/Skill-Tracker",
+    "chunks_stored": 41,
+    "files_processed": 12,
+    "commits_processed": 1,
+    "total_chunks": 41,
+    "elapsed_seconds": 96.7
+  },
+  "DOS-Shell-and-NotePad": {
+    "status": "complete",
+    "updated_at": "2026-04-25T20:03:15.723994",
+    "repo_url": "https://github.com/RaveehaMohsin/DOS-Shell-and-NotePad",
+    "chunks_stored": 32,
+    "files_processed": 17,
+    "commits_processed": 1,
+    "total_chunks": 32,
+    "elapsed_seconds": 86.3
   }
 }

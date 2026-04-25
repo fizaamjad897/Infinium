@@ -16,27 +16,28 @@ from backend.ingestion.pipeline import (
     ingest_local_folder,
     get_ingestion_status,
 )
-from backend.auth.jwt_handler import get_current_user
-from backend.auth.models import UserStore
 from backend.config import settings
 
 router = APIRouter(prefix="/api", tags=["Ingestion"])
-user_store = UserStore()
 
 
 @router.post("/ingest", response_model=IngestResponse)
 async def ingest_github_repo(
     req: IngestRequest,
     background_tasks: BackgroundTasks,
-    current_user: dict = Depends(get_current_user),
+    x_github_token: Optional[str] = Header(None),  # GitHub token from Node.js
 ):
     """Start ingesting a GitHub repository (runs as background task).
     
-    Uses the authenticated user's GitHub token for private repo access.
+    Uses GitHub token from X-GitHub-Token header provided by Node.js backend.
+    Token is optional - public repos work without it.
     """
-    # Get user's GitHub token for private repo access
-    user = user_store.get_user(current_user["github_id"])
-    github_token = user.get("access_token") if user else None
+    github_token = x_github_token  # Use token directly from Node.js
+    
+    if github_token:
+        print(f"   🔑 Using GitHub token from Node.js for {req.repo_name}")
+    else:
+        print(f"   ⚠️ No GitHub token provided for {req.repo_name} (public repo only)")
     
     background_tasks.add_task(
         ingest_repository,
@@ -110,6 +111,7 @@ async def github_webhook(
                 ingest_repository,
                 repo_clone_url,
                 repo_name,
+                github_token=None,  # Webhook has no token, public repos only
             )
             return {"status": "sync_triggered", "event": event, "repo": repo_name}
     

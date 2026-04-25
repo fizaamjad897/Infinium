@@ -23,10 +23,22 @@ def get_chroma_collection(repo_name: str, client: Optional[chromadb.PersistentCl
     if client is None:
         client = get_chroma_client()
 
-    collection_name = repo_name.replace("/", "_").replace("-", "_").replace(".", "_")
-    collection_name = collection_name[:63]
-    if len(collection_name) < 3:
-        collection_name = collection_name + "_repo"
+    # Clean the repo name to be ChromaDB compliant
+    import re
+    collection_name = re.sub(r'[^a-zA-Z0-9._-]', '_', repo_name)
+    
+    # Ensure it starts and ends with alphanumeric (not underscore or hyphen)
+    collection_name = collection_name.strip('._-')
+    
+    # If empty after cleaning, use a hash-based name
+    if not collection_name or len(collection_name) < 3:
+        collection_name = f"repo_{abs(hash(repo_name)) % 10000}"
+    
+    # Truncate to ChromaDB's limit (512 chars)
+    collection_name = collection_name[:512]
+    
+    print(f"   📁 Original repo name: {repo_name}")
+    print(f"   📁 ChromaDB collection: {collection_name}")
 
     return client.get_or_create_collection(
         name=collection_name,
