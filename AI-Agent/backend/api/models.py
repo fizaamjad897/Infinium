@@ -17,6 +17,14 @@ class IngestLocalRequest(BaseModel):
     repo_name: str = Field(..., description="Name for the repository")
 
 
+class RemoteIngestRequest(BaseModel):
+    repo_url: str = Field(..., description="Public GitHub repo URL (e.g., https://github.com/owner/repo)")
+    repo_name: str = Field(..., description="Name for the repository in the index")
+    branch: Optional[str] = Field(None, description="Branch to index (default: repo's default branch)")
+    github_token: Optional[str] = Field(None, description="GitHub token for private repos or higher rate limits (5000/hr vs 60/hr)")
+
+
+
 class IngestResponse(BaseModel):
     status: str
     repo_name: str
@@ -34,6 +42,12 @@ class QueryRequest(BaseModel):
     top_k: Optional[int] = Field(None, description="Number of context chunks to retrieve")
     model: Optional[str] = Field(None, description="Override LLM model")
     conversation_id: Optional[str] = Field(None, description="Conversation ID for follow-up questions")
+    # Git-aware filters
+    branch_filter: Optional[str] = Field(None, description="Scope search to a specific branch name (e.g. 'feature-auth')")
+    chunk_types: Optional[list[str]] = Field(
+        None,
+        description="Filter chunk types: 'code', 'commit', 'commit_diff', 'branch'. None = all types.",
+    )
 
 
 class QueryAllRequest(BaseModel):
@@ -45,6 +59,20 @@ class QueryAllRequest(BaseModel):
     top_k: Optional[int] = Field(None, description="Number of chunks to retrieve across all repos")
     model: Optional[str] = Field(None, description="Override LLM model")
     conversation_id: Optional[str] = Field(None, description="Conversation ID for follow-up questions")
+    branch_filter: Optional[str] = Field(None, description="Scope search to a specific branch name across all repos")
+    chunk_types: Optional[list[str]] = Field(None, description="Filter chunk types")
+
+
+class GitQueryRequest(BaseModel):
+    """Dedicated git history query — focuses only on commits, diffs, and branches."""
+    query: str = Field(..., description="Natural language question about git history")
+    repo_name: str = Field(..., description="Repository to query")
+    branch_filter: Optional[str] = Field(None, description="Scope to a specific branch name")
+    include_diffs: bool = Field(True, description="Include commit diff patches in context")
+    include_commits: bool = Field(True, description="Include commit messages/metadata")
+    include_branches: bool = Field(True, description="Include branch metadata")
+    top_k: Optional[int] = Field(None, description="Number of chunks to retrieve")
+    use_dual_model: Optional[bool] = Field(None, description="Use dual-model pipeline")
 
 
 class SourceInfo(BaseModel):
@@ -117,3 +145,33 @@ class RepoStatusResponse(BaseModel):
     repo_url: str = ""
     folder_path: str = ""
     updated_at: str = ""
+
+
+# ── Git History ──
+
+class BranchInfo(BaseModel):
+    name: str
+    last_commit_sha: str = ""
+    last_commit_author: str = ""
+    last_commit_date: str = ""
+    last_commit_message: str = ""
+    is_default: bool = False
+    merged: bool = False
+
+
+class CommitInfo(BaseModel):
+    sha: str
+    message: str
+    author: str = ""
+    date: str = ""
+    branch: str = ""
+    files_changed: list[str] = []
+    has_diff: bool = False
+
+
+class GitHistoryResponse(BaseModel):
+    repo_name: str
+    branches: list[BranchInfo] = []
+    commits: list[CommitInfo] = []
+    total_branches: int = 0
+    total_commits: int = 0

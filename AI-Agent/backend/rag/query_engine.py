@@ -29,10 +29,14 @@ def ask(
     top_k: int = None,
     model: str = None,
     conversation_id: str = None,
+    branch_filter: Optional[str] = None,
+    chunk_types: Optional[list] = None,
 ) -> dict:
     """Ask a question about a single repository.
 
     Args:
+        branch_filter: Scope retrieval to a specific branch name
+        chunk_types: Filter to specific chunk types (e.g. ['commit_diff', 'branch'])
         query: Natural language question
         repo_name: Name of the repo to search
         use_hybrid: Use hybrid (semantic + BM25) search
@@ -67,6 +71,15 @@ def ask(
     # Retrieve context
     with StepTimer(trace, "retrieval", settings.EMBED_MODEL) as timer:
         if use_hybrid:
+            chunks = hybrid_retrieve(
+                search_query, repo_name, top_k=top_k,
+                chunk_types=chunk_types, branch_filter=branch_filter,
+            )
+        else:
+            chunks = retrieve_context(
+                search_query, repo_name, top_k=top_k,
+                chunk_types=chunk_types, branch_filter=branch_filter,
+            )
             chunks = hybrid_retrieve(search_query, repo_name, top_k=top_k)
         else:
             chunks = retrieve_context(search_query, repo_name, top_k=top_k)
@@ -114,6 +127,8 @@ def ask_all(
     top_k: int = None,
     model: str = None,
     conversation_id: str = None,
+    branch_filter: Optional[str] = None,
+    chunk_types: Optional[list] = None,
 ) -> dict:
     """Ask a question across ALL indexed repositories (whole codebase mode).
 

@@ -2,6 +2,7 @@
 AI-Agent/.env
 .env
 **/.env
+.env.example
 
 # Keep the example template
 !AI-Agent/.env.example

@@ -1,4 +1,9 @@
 """
+Ingestion Pipeline Orchestrator — Enhanced Version
+- GitHub repos: clone → files + branches + commit diffs → chunk → embed → store
+- Local folders: files + optional git history → chunk → embed → store
+- Remote URL: GitHub API fetch (no clone) → files + commits + branches → chunk → embed → store
+- Tracks enriched status: branches_processed, diffs_processed
 Ingestion Pipeline Orchestrator
 - Ties together: clone → walk → chunk → embed → store
 - Supports both GitHub URLs and local folders
@@ -11,12 +16,20 @@ import time
 from datetime import datetime
 from typing import Optional
 
+from backend.ingestion.github_loader import (
+    clone_repo, walk_files,
+    extract_commits, extract_commit_diffs, extract_branches,
+)
+from backend.ingestion.chunker import (
+    chunk_file, chunk_commit, chunk_commit_diff, chunk_branch,
+)
 from backend.ingestion.github_loader import clone_repo, walk_files, extract_commits
 from backend.ingestion.chunker import chunk_file, chunk_commit
 from backend.ingestion.embedder import get_chroma_collection, embed_and_store, delete_collection
 from backend.config import settings
 
 
+_ingestion_status: dict[str, dict] = {}
 # Simple in-memory + file-based status tracking
 _ingestion_status: dict[str, dict] = {}
 
@@ -48,6 +61,20 @@ def get_ingestion_status(repo_name: str) -> dict:
 
 
 def get_all_repos() -> list[dict]:
+    _load_status()
+    return [{"repo_name": name, **status} for name, status in _ingestion_status.items()]
+
+
+def _update_status(repo_name: str, status: str, **kwargs):
+    _load_status()
+    if repo_name not in _ingestion_status:
+        _ingestion_status[repo_name] = {}
+    # Clear stale error from previous runs when transitioning to a new active status
+    active_statuses = {"cloning", "scanning_files", "fetching_repo_info",
+                       "fetching_files", "fetching_commits", "fetching_branches",
+                       "extracting_branches", "extracting_diffs", "chunking", "embedding"}
+    if status in active_statuses:
+        _ingestion_status[repo_name].pop("error", None)
     """Get status of all ingested repositories."""
     _load_status()
     return [
@@ -69,11 +96,52 @@ def _update_status(repo_name: str, status: str, **kwargs):
     _save_status()
 
 
+def _chunk_and_store(files, commits_with_diffs, commits_basic, branches, repo_name, collection):
+    """Shared chunk+embed+store logic used by all ingest paths."""
+    all_chunks = []
+
+    # File chunks (with contextual prefix)
+    for f in files:
+        all_chunks.extend(chunk_file(f, settings.CHUNK_SIZE, settings.CHUNK_OVERLAP))
+
+    # Commit diff chunks (rich — includes actual diff patch)
+    for c in commits_with_diffs:
+        all_chunks.append(chunk_commit_diff(c))
+
+    # Basic commit chunks for any commits not in diffs list
+    diff_shas = {c.get("sha") for c in commits_with_diffs}
+    for c in commits_basic:
+        if c.get("sha") not in diff_shas:
+            all_chunks.append(chunk_commit(c))
+
+    # Branch chunks
+    for b in branches:
+        all_chunks.append(chunk_branch(b))
+
+    print(f"   📦 Total chunks: {len(all_chunks)} "
+          f"(files: {sum(1 for c in all_chunks if c['type'] in ('code', 'documentation'))}, "
+          f"diffs: {sum(1 for c in all_chunks if c['type'] == 'commit_diff')}, "
+          f"commits: {sum(1 for c in all_chunks if c['type'] == 'commit')}, "
+          f"branches: {sum(1 for c in all_chunks if c['type'] == 'branch')})")
+
+    stored = embed_and_store(all_chunks, collection, repo_name=repo_name)
+    return stored, len(all_chunks)
+
+
 def ingest_repository(
     repo_url: str,
     repo_name: str,
     github_token: Optional[str] = None,
 ) -> dict:
+    """Full ingestion pipeline for a GitHub repository (cloned)."""
+    print(f"\n🚀 Starting ingestion for: {repo_name} ({repo_url})")
+    start_time = time.time()
+    _update_status(repo_name, "cloning", repo_url=repo_url)
+
+    try:
+        dest = os.path.join(settings.REPO_CACHE_DIR, repo_name.replace("/", "_"))
+        path = clone_repo(repo_url, dest, github_token=github_token)
+
     """Full ingestion pipeline for a GitHub repository.
     
     1. Clone/pull the repo
@@ -99,6 +167,37 @@ def ingest_repository(
         print(f"   🔍 Scanning files...")
         files = walk_files(path)
         print(f"   📄 Found {len(files)} source files")
+
+        _update_status(repo_name, "extracting_branches")
+        print(f"   🌿 Extracting branches...")
+        branches = extract_branches(path)
+
+        _update_status(repo_name, "extracting_diffs")
+        print(f"   📜 Extracting commit diffs (last {settings.MAX_COMMITS} commits)...")
+        commits_with_diffs = extract_commit_diffs(path, max_commits=settings.MAX_COMMITS)
+        print(f"   📜 Got {len(commits_with_diffs)} commits with diffs")
+
+        _update_status(repo_name, "chunking")
+        print(f"   ✂️ Chunking content...")
+
+        _update_status(repo_name, "embedding")
+        print(f"   🧮 Generating embeddings and storing...")
+        collection = get_chroma_collection(repo_name)
+        stored, total = _chunk_and_store(files, commits_with_diffs, [], branches, repo_name, collection)
+
+        elapsed = round(time.time() - start_time, 1)
+        stats = {
+            "chunks_stored": stored,
+            "files_processed": len(files),
+            "commits_processed": len(commits_with_diffs),
+            "branches_processed": len(branches),
+            "total_chunks": total,
+            "elapsed_seconds": elapsed,
+        }
+        _update_status(repo_name, "complete", repo_url=repo_url, **stats)
+        print(f"   ✅ Ingestion complete in {elapsed}s!")
+        return stats
+
         
         # 3. Extract commits
         _update_status(repo_name, "extracting_commits")
@@ -157,6 +256,49 @@ def ingest_local_folder(
     folder_path: str,
     repo_name: str,
 ) -> dict:
+    """Ingest a local folder — walks files + extracts git history if available."""
+    print(f"\n🚀 Starting local ingestion for: {repo_name} ({folder_path})")
+    start_time = time.time()
+
+    if not os.path.exists(folder_path):
+        raise FileNotFoundError(f"Folder not found: {folder_path}")
+
+    _update_status(repo_name, "scanning_files", folder_path=folder_path)
+    print(f"   🔍 Scanning files...")
+    files = walk_files(folder_path)
+    print(f"   📄 Found {len(files)} source files")
+
+    commits_with_diffs = []
+    branches = []
+
+    if os.path.exists(os.path.join(folder_path, ".git")):
+        _update_status(repo_name, "extracting_branches")
+        print(f"   🌿 Extracting branches...")
+        branches = extract_branches(folder_path)
+
+        _update_status(repo_name, "extracting_diffs")
+        print(f"   📜 Extracting commit diffs...")
+        commits_with_diffs = extract_commit_diffs(folder_path, max_commits=settings.MAX_COMMITS)
+        print(f"   📜 Got {len(commits_with_diffs)} commits with diffs")
+
+    _update_status(repo_name, "chunking")
+    print(f"   ✂️ Chunking content...")
+
+    _update_status(repo_name, "embedding")
+    print(f"   🧮 Generating embeddings and storing...")
+    collection = get_chroma_collection(repo_name)
+    stored, total = _chunk_and_store(files, commits_with_diffs, [], branches, repo_name, collection)
+
+    elapsed = round(time.time() - start_time, 1)
+    stats = {
+        "chunks_stored": stored,
+        "files_processed": len(files),
+        "commits_processed": len(commits_with_diffs),
+        "branches_processed": len(branches),
+        "total_chunks": total,
+        "elapsed_seconds": elapsed,
+    }
+    _update_status(repo_name, "complete", folder_path=folder_path, **stats)
     """Ingest a local folder (no git clone, just file walk + optional commit history).
     
     This is useful for testing or for repos already on disk.
@@ -221,6 +363,83 @@ def ingest_local_folder(
     return stats
 
 
+def ingest_remote_url(
+    repo_url: str,
+    repo_name: str,
+    branch: Optional[str] = None,
+    github_token: Optional[str] = None,
+) -> dict:
+    """Ingest a public GitHub repo via the GitHub API — no git clone needed.
+
+    Fetches files, commits, and branches using the REST API.
+    Works for any public repo without authentication.
+    """
+    from backend.ingestion.remote_loader import (
+        _parse_repo_url, fetch_repo_info, fetch_all_files,
+        fetch_repo_commits, fetch_repo_branches,
+    )
+
+    print(f"\n🚀 Starting remote URL ingestion for: {repo_name} ({repo_url})")
+    start_time = time.time()
+    _update_status(repo_name, "fetching_repo_info", repo_url=repo_url, source="remote_url")
+
+    try:
+        owner, repo = _parse_repo_url(repo_url)
+        info = fetch_repo_info(repo_url, github_token)
+
+        # User-supplied branch is a hint. Use the repo's actual default if not specified.
+        # If specified branch doesn't match default, we try user's choice first, then fall back.
+        actual_default = info.get("default_branch", "main")
+        target_branch = branch if branch else actual_default
+
+        print(f"   ℹ️  {info['full_name']} — branch: {target_branch} (default: {actual_default})")
+
+        _update_status(repo_name, "fetching_files")
+        files = fetch_all_files(owner, repo, target_branch, github_token)
+
+        _update_status(repo_name, "fetching_commits")
+        print(f"   📜 Fetching commit history...")
+        raw_commits = fetch_repo_commits(owner, repo, target_branch, settings.MAX_COMMITS, github_token)
+        print(f"   📜 Got {len(raw_commits)} commits")
+
+        _update_status(repo_name, "fetching_branches")
+        print(f"   🌿 Fetching branches...")
+        raw_branches = fetch_repo_branches(owner, repo, github_token)
+        # Mark default branch
+        for b in raw_branches:
+            b["is_default"] = (b["name"] == target_branch)
+
+        _update_status(repo_name, "chunking")
+        print(f"   ✂️ Chunking content...")
+
+        _update_status(repo_name, "embedding")
+        print(f"   🧮 Generating embeddings and storing...")
+        collection = get_chroma_collection(repo_name)
+        # Basic commits (no diffs from REST API list endpoint)
+        stored, total = _chunk_and_store(files, [], raw_commits, raw_branches, repo_name, collection)
+
+        elapsed = round(time.time() - start_time, 1)
+        stats = {
+            "chunks_stored": stored,
+            "files_processed": len(files),
+            "commits_processed": len(raw_commits),
+            "branches_processed": len(raw_branches),
+            "total_chunks": total,
+            "elapsed_seconds": elapsed,
+            "source": "remote_url",
+            "ingested_branch": target_branch,
+        }
+        _update_status(repo_name, "complete", repo_url=repo_url, **stats)
+        print(f"   ✅ Remote ingestion complete in {elapsed}s!")
+        return stats
+
+    except Exception as e:
+        _update_status(repo_name, "error", error=str(e))
+        print(f"   ❌ Remote ingestion failed: {e}")
+        raise
+
+
+def remove_repository(repo_name: str):
 def remove_repository(repo_name: str):
     """Remove a repository's data from ChromaDB and status."""
     delete_collection(repo_name)
@@ -231,6 +450,22 @@ def remove_repository(repo_name: str):
 
 
 def reindex_repository(repo_name: str, github_token: Optional[str] = None) -> dict:
+    _load_status()
+    info = _ingestion_status.get(repo_name, {})
+    repo_url = info.get("repo_url", "")
+    folder_path = info.get("folder_path", "")
+    source = info.get("source", "")
+
+    delete_collection(repo_name)
+
+    if source == "remote_url" or (repo_url and not folder_path):
+        return ingest_remote_url(repo_url, repo_name, github_token=github_token)
+    elif folder_path:
+        return ingest_local_folder(folder_path, repo_name)
+    elif repo_url:
+        return ingest_repository(repo_url, repo_name, github_token=github_token)
+    else:
+        raise ValueError(f"No source URL or path found for repo: {repo_name}")
     """Re-index a repository (delete + ingest again)."""
     _load_status()
     info = _ingestion_status.get(repo_name, {})

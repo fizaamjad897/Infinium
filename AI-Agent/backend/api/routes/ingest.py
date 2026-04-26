@@ -16,6 +16,12 @@ from backend.ingestion.pipeline import (
     ingest_local_folder,
     get_ingestion_status,
 )
+from backend.auth.jwt_handler import get_current_user
+from backend.auth.models import UserStore
+from backend.config import settings
+
+router = APIRouter(prefix="/api", tags=["Ingestion"])
+user_store = UserStore()
 from backend.config import settings
 
 router = APIRouter(prefix="/api", tags=["Ingestion"])
@@ -25,6 +31,15 @@ router = APIRouter(prefix="/api", tags=["Ingestion"])
 async def ingest_github_repo(
     req: IngestRequest,
     background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user),
+):
+    """Start ingesting a GitHub repository (runs as background task).
+    
+    Uses the authenticated user's GitHub token for private repo access.
+    """
+    # Get user's GitHub token for private repo access
+    user = user_store.get_user(current_user["github_id"])
+    github_token = user.get("access_token") if user else None
     x_github_token: Optional[str] = Header(None),  # GitHub token from Node.js
 ):
     """Start ingesting a GitHub repository (runs as background task).
@@ -111,6 +126,10 @@ async def github_webhook(
                 ingest_repository,
                 repo_clone_url,
                 repo_name,
+            )
+            return {"status": "sync_triggered", "event": event, "repo": repo_name}
+    
+    return {"status": "ignored", "event": event}
                 github_token=None,  # Webhook has no token, public repos only
             )
             return {"status": "sync_triggered", "event": event, "repo": repo_name}

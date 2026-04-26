@@ -33,6 +33,8 @@ class Settings(BaseSettings):
 
     # ── Chunking ──
     CHUNK_SIZE: int = 512         # words
+    CHUNK_OVERLAP: int = 128      # words overlap (raised from 64 for better context continuity)
+    MAX_COMMITS: int = 200        # reduced: diffs are larger than plain commits
     CHUNK_OVERLAP: int = 64       # words overlap between chunks
     MAX_COMMITS: int = 500
 
@@ -56,6 +58,12 @@ class Settings(BaseSettings):
 
     # ── GitHub Webhook ──
     GITHUB_WEBHOOK_SECRET: str = ""
+
+    # ── GitHub API Token (server-level, for remote URL ingestion rate limits) ──
+    # Optional but recommended: generate a classic PAT with no special scopes at
+    # https://github.com/settings/tokens — this lifts the rate limit from 60/hr to 5000/hr
+    # for all POST /api/ingest/url requests, without requiring users to pass a token.
+    GITHUB_API_TOKEN: str = ""
 
     # ── Paths ──
     REPO_CACHE_DIR: str = str(PROJECT_ROOT / "repo_cache")

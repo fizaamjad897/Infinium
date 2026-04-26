@@ -37,6 +37,8 @@ async def query_repo(req: QueryRequest):
         top_k=req.top_k,
         model=req.model,
         conversation_id=req.conversation_id,
+        branch_filter=req.branch_filter,
+        chunk_types=req.chunk_types,
     )
     return result
 
@@ -58,6 +60,8 @@ async def query_all_repos(req: QueryAllRequest):
         top_k=req.top_k,
         model=req.model,
         conversation_id=req.conversation_id,
+        branch_filter=req.branch_filter,
+        chunk_types=req.chunk_types,
     )
     return result
 
