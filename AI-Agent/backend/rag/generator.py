@@ -20,6 +20,11 @@ REASONING_SYSTEM_PROMPT = """You are an expert code analyst. Your job is to deep
 Given the context from a codebase, perform the following analysis:
 1. TRACE the causal chain — what led to this code/decision?
 2. IDENTIFY the key files, functions, commits (cite SHA hashes), and branches involved
+REASONING_SYSTEM_PROMPT = """You are an expert code analyst. Your job is to deeply analyze code, commits, and documentation to understand WHY and HOW decisions were made in a software project.
+
+Given the context from a codebase, perform the following analysis:
+1. TRACE the causal chain — what led to this code/decision?
+2. IDENTIFY the key files, functions, and commits involved
 3. EXPLAIN the temporal sequence — what happened first, what followed
 4. NOTE any patterns, trade-offs, or architectural implications
 5. HIGHLIGHT connections between different parts of the codebase
@@ -43,6 +48,19 @@ When answering questions:
 You are NOT a code generator. You are a reasoning agent that helps developers understand their codebase's history, architecture, and decision-making patterns."""
 
 SINGLE_MODEL_SYSTEM_PROMPT = SYNTHESIS_SYSTEM_PROMPT
+You have access to code files, commit history, issues, pull requests, and documentation from the user's repositories.
+
+When answering questions:
+1. **Always cite your sources** — reference as [Source N] (e.g., [Source 1: path/to/file.py])
+2. **Explain WHY** decisions were made, not just what they are — trace through commit history and code changes
+3. **Cross-reference across repos** when the context spans multiple repositories
+4. **Be precise and technical** — provide specific code references, function names, and commit SHAs
+5. **Structure your response** clearly with headers and bullet points for complex questions
+6. **If context is insufficient**, say so clearly and suggest what additional information would help
+
+You are NOT a code generator. You are a reasoning agent that helps developers understand their codebase's history, architecture, and decision-making patterns."""
+
+SINGLE_MODEL_SYSTEM_PROMPT = SYNTHESIS_SYSTEM_PROMPT  # Same prompt for single-model mode
 
 
 def _call_ollama_chat(
@@ -103,6 +121,24 @@ def _call_ollama_chat(
 
 from backend.rag.context_builder import build_context_block, get_chunk_type_summary
 
+def build_context_block(chunks: list[dict]) -> str:
+    """Format retrieved chunks into a labeled context block for the LLM."""
+    if not chunks:
+        return "No relevant context found."
+
+    parts = []
+    for i, chunk in enumerate(chunks, 1):
+        repo = chunk.get("repo", "unknown")
+        source = chunk.get("source", "unknown")
+        chunk_type = chunk.get("type", "code")
+        relevance = chunk.get("relevance", 0)
+
+        header = f"[Source {i}: {repo}/{source} (type: {chunk_type}, relevance: {relevance})]"
+        parts.append(header)
+        parts.append(chunk["text"])
+        parts.append("")
+
+    return "\n".join(parts)
 
 
 def _generate_dual_model(

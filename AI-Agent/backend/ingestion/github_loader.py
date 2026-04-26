@@ -7,6 +7,11 @@ GitHub Repository Loader — Enhanced Version
 - File blame extraction for key files
 """
 from __future__ import annotations
+GitHub Repository Loader
+- Clone/pull repos from GitHub
+- Extract commit history with metadata
+- Walk source files for indexing
+"""
 import os
 from pathlib import Path
 from typing import Optional
@@ -37,6 +42,14 @@ def clone_repo(repo_url: str, dest: str, github_token: Optional[str] = None) -> 
     if git is None:
         raise ImportError("gitpython is required: pip install gitpython")
 
+    """Clone a GitHub repo or pull latest if it already exists.
+    
+    If github_token is provided, it will be injected into the URL for private repos.
+    """
+    if git is None:
+        raise ImportError("gitpython is required: pip install gitpython")
+
+    # Inject token for private repo access
     if github_token and "github.com" in repo_url:
         repo_url = repo_url.replace(
             "https://github.com",
@@ -62,11 +75,21 @@ def extract_commits(repo_path: str, max_commits: int = 200) -> list[dict]:
     """Extract basic commit history (message + files list, no diff)."""
     if git is None:
         return []
+    
+    return dest
+
+
+def extract_commits(repo_path: str, max_commits: int = 500) -> list[dict]:
+    """Extract commit history with metadata."""
+    if git is None:
+        return []
+    
     try:
         repo = git.Repo(repo_path)
     except Exception:
         return []
 
+    
     commits = []
     for commit in list(repo.iter_commits())[:max_commits]:
         try:
@@ -220,6 +243,10 @@ def extract_file_blame(repo_path: str, file_path: str) -> list[dict]:
         return []
 
 
+    
+    return commits
+
+
 def walk_files(repo_path: str) -> list[dict]:
     """Walk repository and read all supported source files."""
     files = []
@@ -233,6 +260,18 @@ def walk_files(repo_path: str) -> list[dict]:
             try:
                 if path.stat().st_size > 500_000:
                     continue
+    
+    for path in base.rglob("*"):
+        # Skip ignored directories
+        if any(ignored in path.parts for ignored in IGNORE_DIRS):
+            continue
+        
+        if path.suffix.lower() in SUPPORTED_EXTENSIONS and path.is_file():
+            try:
+                # Skip very large files (> 500KB)
+                if path.stat().st_size > 500_000:
+                    continue
+                    
                 content = path.read_text(encoding="utf-8", errors="ignore")
                 if content.strip():
                     files.append({
@@ -244,6 +283,7 @@ def walk_files(repo_path: str) -> list[dict]:
             except Exception:
                 continue
 
+    
     return files
 
 
@@ -256,6 +296,18 @@ def validate_github_access(repo_url: str, github_token: str) -> dict:
 
     headers = {"Authorization": f"token {github_token}"} if github_token else {}
 
+    """Check if user has access to a GitHub repository.
+    
+    Returns: {"has_access": bool, "is_public": bool, "repo_info": dict}
+    """
+    import httpx
+    
+    # Extract owner/repo from URL
+    parts = repo_url.rstrip("/").rstrip(".git").split("/")
+    owner, repo = parts[-2], parts[-1]
+    
+    headers = {"Authorization": f"token {github_token}"} if github_token else {}
+    
     try:
         resp = httpx.get(
             f"https://api.github.com/repos/{owner}/{repo}",
@@ -263,6 +315,7 @@ def validate_github_access(repo_url: str, github_token: str) -> dict:
             timeout=10,
         )
 
+        
         if resp.status_code == 200:
             data = resp.json()
             return {

@@ -27,6 +27,22 @@ def get_chroma_collection(repo_name: str, client: Optional[chromadb.PersistentCl
     collection_name = collection_name[:63]
     if len(collection_name) < 3:
         collection_name = collection_name + "_repo"
+    # Clean the repo name to be ChromaDB compliant
+    import re
+    collection_name = re.sub(r'[^a-zA-Z0-9._-]', '_', repo_name)
+    
+    # Ensure it starts and ends with alphanumeric (not underscore or hyphen)
+    collection_name = collection_name.strip('._-')
+    
+    # If empty after cleaning, use a hash-based name
+    if not collection_name or len(collection_name) < 3:
+        collection_name = f"repo_{abs(hash(repo_name)) % 10000}"
+    
+    # Truncate to ChromaDB's limit (512 chars)
+    collection_name = collection_name[:512]
+    
+    print(f"   📁 Original repo name: {repo_name}")
+    print(f"   📁 ChromaDB collection: {collection_name}")
 
     return client.get_or_create_collection(
         name=collection_name,
@@ -59,6 +75,9 @@ def _ollama_embed(text: str, retries: int = 3) -> list[float]:
     import time
     text = _truncate_for_embed(text)
     
+def _ollama_embed(text: str, retries: int = 3) -> list[float]:
+    """Get embedding from Ollama API with retry on transient errors."""
+    import time
     for attempt in range(retries):
         try:
             resp = requests.post(
@@ -79,11 +98,14 @@ def _ollama_embed(text: str, retries: int = 3) -> list[float]:
                     if resp2.status_code == 200:
                         return resp2.json()["embedding"]
                 resp.raise_for_status()     # propagate if short version also fails
+                timeout=30,
+            )
             resp.raise_for_status()
             return resp.json()["embedding"]
         except Exception as e:
             if attempt < retries - 1:
                 time.sleep(1.0 * (attempt + 1))  # 1s, 2s backoff
+                time.sleep(0.5 * (attempt + 1))  # 0.5s, 1s backoff
                 continue
             raise RuntimeError(f"Ollama embedding failed after {retries} attempts: {e}")
 
@@ -93,6 +115,15 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
     results = []
     for text in texts:
         results.append(_ollama_embed(text))
+
+def embed_texts(texts: list[str]) -> list[list[float]]:
+    """Generate embeddings for a list of texts via Ollama (parallel)."""
+    results = [None] * len(texts)
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        future_to_idx = {executor.submit(_ollama_embed, t): i for i, t in enumerate(texts)}
+        for future in as_completed(future_to_idx):
+            idx = future_to_idx[future]
+            results[idx] = future.result()
     return results
 
 
@@ -136,6 +167,20 @@ def embed_and_store(chunks: list[dict], collection, repo_name: str = ""):
             except Exception as e:
                 print(f"   ⚠️ Embedding failed for chunk {i + idx}: {e}")
                 embeddings[idx] = [0.0] * 768  # zero vector fallback
+        # Embed all chunks in parallel
+        embeddings = [None] * len(documents)
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            future_to_idx = {
+                executor.submit(_ollama_embed, doc): idx
+                for idx, doc in enumerate(documents)
+            }
+            for future in as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                try:
+                    embeddings[idx] = future.result()
+                except Exception as e:
+                    print(f"   ⚠️ Embedding failed for chunk {idx}: {e}")
+                    embeddings[idx] = [0.0] * 768  # fallback zero vector
 
         metadatas = []
         for c in batch:

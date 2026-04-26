@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     CHUNK_SIZE: int = 512         # words
     CHUNK_OVERLAP: int = 128      # words overlap (raised from 64 for better context continuity)
     MAX_COMMITS: int = 200        # reduced: diffs are larger than plain commits
+    CHUNK_OVERLAP: int = 64       # words overlap between chunks
+    MAX_COMMITS: int = 500
 
     # ── RAG ──
     RAG_TOP_K: int = 5               # Fewer chunks → smaller prompt → faster LLM
