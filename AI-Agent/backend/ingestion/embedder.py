@@ -34,34 +34,65 @@ def get_chroma_collection(repo_name: str, client: Optional[chromadb.PersistentCl
     )
 
 
+# nomic-embed-text context window is ~8192 tokens.
+# We use chars as a proxy: avg 4 chars/token → 8192*4 = 32768 chars max.
+# We cap at 6000 chars (conservative) to avoid any tokenizer surprises.
+MAX_EMBED_CHARS = 6000
+
+
+def _truncate_for_embed(text: str) -> str:
+    """Truncate text to fit nomic-embed-text's context window.
+    Adds a truncation marker if text was cut.
+    """
+    if len(text) <= MAX_EMBED_CHARS:
+        return text
+    return text[:MAX_EMBED_CHARS] + "\n... [truncated for embedding]"
+
+
 def _ollama_embed(text: str, retries: int = 3) -> list[float]:
-    """Get embedding from Ollama API with retry on transient errors."""
+    """Get embedding from Ollama API.
+    
+    - Truncates text to MAX_EMBED_CHARS before sending
+    - On 500 errors (model overload / context exceeded), retries with 2000-char version
+    - Retries up to `retries` times on transient errors
+    """
     import time
+    text = _truncate_for_embed(text)
+    
     for attempt in range(retries):
         try:
             resp = requests.post(
                 f"{settings.OLLAMA_BASE_URL}/api/embeddings",
                 json={"model": settings.EMBED_MODEL, "prompt": text},
-                timeout=30,
+                timeout=60,
             )
+            # 500 = model context exceeded or Ollama internal error
+            # Try with a much shorter version of the text
+            if resp.status_code == 500:
+                if len(text) > 2000:
+                    short_text = text[:2000] + "\n... [hard-truncated]"
+                    resp2 = requests.post(
+                        f"{settings.OLLAMA_BASE_URL}/api/embeddings",
+                        json={"model": settings.EMBED_MODEL, "prompt": short_text},
+                        timeout=60,
+                    )
+                    if resp2.status_code == 200:
+                        return resp2.json()["embedding"]
+                resp.raise_for_status()     # propagate if short version also fails
             resp.raise_for_status()
             return resp.json()["embedding"]
         except Exception as e:
             if attempt < retries - 1:
-                time.sleep(0.5 * (attempt + 1))  # 0.5s, 1s backoff
+                time.sleep(1.0 * (attempt + 1))  # 1s, 2s backoff
                 continue
             raise RuntimeError(f"Ollama embedding failed after {retries} attempts: {e}")
 
 
-
 def embed_texts(texts: list[str]) -> list[list[float]]:
-    """Generate embeddings for a list of texts via Ollama (parallel)."""
-    results = [None] * len(texts)
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        future_to_idx = {executor.submit(_ollama_embed, t): i for i, t in enumerate(texts)}
-        for future in as_completed(future_to_idx):
-            idx = future_to_idx[future]
-            results[idx] = future.result()
+    """Generate embeddings for a list of texts via Ollama (sequential to avoid overloading)."""
+    results = []
+    for text in texts:
+        results.append(_ollama_embed(text))
     return results
 
 
@@ -96,20 +127,15 @@ def embed_and_store(chunks: list[dict], collection, repo_name: str = ""):
 
         documents = [c["text"] for c in batch]
 
-        # Embed all chunks in parallel
+        # Embed all chunks sequentially to avoid overwhelming Ollama
+        # (parallel calls cause 500 errors when nomic-embed-text is under load)
         embeddings = [None] * len(documents)
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            future_to_idx = {
-                executor.submit(_ollama_embed, doc): idx
-                for idx, doc in enumerate(documents)
-            }
-            for future in as_completed(future_to_idx):
-                idx = future_to_idx[future]
-                try:
-                    embeddings[idx] = future.result()
-                except Exception as e:
-                    print(f"   ⚠️ Embedding failed for chunk {idx}: {e}")
-                    embeddings[idx] = [0.0] * 768  # fallback zero vector
+        for idx, doc in enumerate(documents):
+            try:
+                embeddings[idx] = _ollama_embed(doc)
+            except Exception as e:
+                print(f"   ⚠️ Embedding failed for chunk {i + idx}: {e}")
+                embeddings[idx] = [0.0] * 768  # zero vector fallback
 
         metadatas = []
         for c in batch:

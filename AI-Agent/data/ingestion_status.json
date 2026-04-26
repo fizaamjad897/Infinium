@@ -58,5 +58,106 @@
     "commits_processed": 4,
     "total_chunks": 18,
     "elapsed_seconds": 7.7
+  },
+  "infinium-remote": {
+    "status": "error",
+    "updated_at": "2026-04-23T00:45:10.121257",
+    "repo_url": "https://github.com/fizaamjad/Infinium",
+    "source": "remote_url",
+    "error": "404 Client Error: Not Found for url: https://api.github.com/repos/fizaamjad/Infinium"
+  },
+  "fastapi-template": {
+    "status": "complete",
+    "updated_at": "2026-04-23T00:46:52.577024",
+    "repo_url": "https://github.com/tiangolo/full-stack-fastapi-template",
+    "source": "remote_url",
+    "chunks_stored": 31,
+    "files_processed": 26,
+    "commits_processed": 0,
+    "branches_processed": 0,
+    "total_chunks": 31,
+    "elapsed_seconds": 35.8,
+    "ingested_branch": "master"
+  },
+  "n8n": {
+    "status": "complete",
+    "updated_at": "2026-04-23T02:23:09.746658",
+    "repo_url": "https://github.com/Zie619/n8n-workflows.git",
+    "source": "remote_url",
+    "chunks_stored": 6392,
+    "files_processed": 1677,
+    "commits_processed": 151,
+    "branches_processed": 5,
+    "total_chunks": 6392,
+    "elapsed_seconds": 3044.7,
+    "ingested_branch": "main"
+  },
+  "max-game": {
+    "status": "complete",
+    "updated_at": "2026-04-23T01:14:18.644261",
+    "repo_url": "https://github.com/AjayRaikar-Developer/Maze-Game-ComputerGraphics-Project.git",
+    "source": "remote_url",
+    "error": "403 Client Error: rate limit exceeded for url: https://api.github.com/repos/AjayRaikar-Developer/Maze-Game-ComputerGraphics-Project",
+    "chunks_stored": 17,
+    "files_processed": 2,
+    "commits_processed": 4,
+    "branches_processed": 1,
+    "total_chunks": 17,
+    "elapsed_seconds": 11.2,
+    "ingested_branch": "master"
+  },
+  "maze-game": {
+    "status": "complete",
+    "updated_at": "2026-04-23T01:17:07.947502",
+    "repo_url": "https://github.com/AjayRaikar-Developer/Maze-Game-ComputerGraphics-Project.git",
+    "source": "remote_url",
+    "error": "404 Client Error: Not Found for url: https://api.github.com/repos/AjayRaikar-Developer/Maze-Game-ComputerGraphics-Project/git/trees/main?recursive=1",
+    "chunks_stored": 17,
+    "files_processed": 2,
+    "commits_processed": 4,
+    "branches_processed": 1,
+    "total_chunks": 17,
+    "elapsed_seconds": 10.5,
+    "ingested_branch": "master"
+  },
+  "DOS-Shell-and-NotePad": {
+    "status": "complete",
+    "updated_at": "2026-04-26T01:51:29.861825",
+    "repo_url": "https://github.com/RaveehaMohsin/DOS-Shell-and-NotePad",
+    "source": "remote_url",
+    "chunks_stored": 36,
+    "files_processed": 17,
+    "commits_processed": 1,
+    "branches_processed": 1,
+    "total_chunks": 36,
+    "elapsed_seconds": 24.4,
+    "ingested_branch": "main"
+  },
+  "FGSM-Attack-": {
+    "status": "error",
+    "updated_at": "2026-04-25T20:12:59.536364",
+    "repo_url": "https://github.com/RaveehaMohsin/FGSM-Attack-",
+    "source": "remote_url",
+    "error": "Validation error: name: Expected a name containing 3-512 characters from [a-zA-Z0-9._-], starting and ending with a character in [a-zA-Z0-9]. Got: FGSM_Attack_"
+  },
+  "FGSM-Attack": {
+    "status": "complete",
+    "updated_at": "2026-04-26T01:48:15.716703",
+    "repo_url": "https://github.com/RaveehaMohsin/FGSM-Attack-",
+    "source": "remote_url",
+    "chunks_stored": 56,
+    "files_processed": 17,
+    "commits_processed": 5,
+    "branches_processed": 1,
+    "total_chunks": 56,
+    "elapsed_seconds": 34.5,
+    "ingested_branch": "main"
+  },
+  "Skill-Tracker": {
+    "status": "error",
+    "updated_at": "2026-04-26T01:49:48.634300",
+    "repo_url": "https://github.com/RaveehaMohsin/Skill-Tracker",
+    "source": "remote_url",
+    "error": "404 Client Error: Not Found for url: https://api.github.com/repos/RaveehaMohsin/Skill-Tracker"
   }
 }

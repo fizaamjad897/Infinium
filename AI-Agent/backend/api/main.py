@@ -33,11 +33,15 @@ from backend.auth.github_oauth import router as auth_router
 from backend.api.routes.ingest import router as ingest_router
 from backend.api.routes.query import router as query_router
 from backend.api.routes.repos import router as repos_router
+from backend.api.routes.remote import router as remote_router
+from backend.api.routes.git_history import router as git_router
 
 app.include_router(auth_router)
 app.include_router(ingest_router)
 app.include_router(query_router)
 app.include_router(repos_router)
+app.include_router(remote_router)
+app.include_router(git_router)
 
 
 # ── Startup Event ──
