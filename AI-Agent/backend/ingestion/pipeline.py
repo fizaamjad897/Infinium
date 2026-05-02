@@ -109,11 +109,12 @@ def ingest_repository(
     repo_url: str,
     repo_name: str,
     github_token: Optional[str] = None,
+    ingested_by: str = "",
 ) -> dict:
     """Full ingestion pipeline for a GitHub repository (cloned)."""
     print(f"\n🚀 Starting ingestion for: {repo_name} ({repo_url})")
     start_time = time.time()
-    _update_status(repo_name, "cloning", repo_url=repo_url)
+    _update_status(repo_name, "cloning", repo_url=repo_url, ingested_by=ingested_by)
 
     try:
         dest = os.path.join(settings.REPO_CACHE_DIR, repo_name.replace("/", "_"))
@@ -163,6 +164,7 @@ def ingest_repository(
 def ingest_local_folder(
     folder_path: str,
     repo_name: str,
+    ingested_by: str = "",
 ) -> dict:
     """Ingest a local folder — walks files + extracts git history if available."""
     print(f"\n🚀 Starting local ingestion for: {repo_name} ({folder_path})")
@@ -171,7 +173,7 @@ def ingest_local_folder(
     if not os.path.exists(folder_path):
         raise FileNotFoundError(f"Folder not found: {folder_path}")
 
-    _update_status(repo_name, "scanning_files", folder_path=folder_path)
+    _update_status(repo_name, "scanning_files", folder_path=folder_path, ingested_by=ingested_by)
     print(f"   🔍 Scanning files...")
     files = walk_files(folder_path)
     print(f"   📄 Found {len(files)} source files")
@@ -216,6 +218,7 @@ def ingest_remote_url(
     repo_name: str,
     branch: Optional[str] = None,
     github_token: Optional[str] = None,
+    ingested_by: str = "",
 ) -> dict:
     """Ingest a public GitHub repo via the GitHub API — no git clone needed.
 
@@ -229,7 +232,7 @@ def ingest_remote_url(
 
     print(f"\n🚀 Starting remote URL ingestion for: {repo_name} ({repo_url})")
     start_time = time.time()
-    _update_status(repo_name, "fetching_repo_info", repo_url=repo_url, source="remote_url")
+    _update_status(repo_name, "fetching_repo_info", repo_url=repo_url, source="remote_url", ingested_by=ingested_by)
 
     try:
         owner, repo = _parse_repo_url(repo_url)

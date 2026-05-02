@@ -35,6 +35,11 @@ from backend.api.routes.query import router as query_router
 from backend.api.routes.repos import router as repos_router
 from backend.api.routes.remote import router as remote_router
 from backend.api.routes.git_history import router as git_router
+from backend.api.routes.access import router as access_router
+from backend.api.routes.dashboard import router as dashboard_router
+from backend.api.routes.ide import router as ide_router
+from backend.api.routes.slack import router as slack_router
+from backend.api.routes.docs import router as docs_router
 
 app.include_router(auth_router)
 app.include_router(ingest_router)
@@ -42,6 +47,11 @@ app.include_router(query_router)
 app.include_router(repos_router)
 app.include_router(remote_router)
 app.include_router(git_router)
+app.include_router(access_router)
+app.include_router(dashboard_router)
+app.include_router(ide_router)
+app.include_router(slack_router)
+app.include_router(docs_router)
 
 
 # ── Startup Event ──

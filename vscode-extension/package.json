@@ -1,0 +1,81 @@
+{
+  "name": "infinium-vscode",
+  "displayName": "Infinium",
+  "description": "Ask questions about your codebase from within VS Code — powered by Infinium's RAG backend.",
+  "version": "0.1.0",
+  "publisher": "infinium",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": [
+    "onCommand:infinium.askQuestion",
+    "onCommand:infinium.explainSelection",
+    "onCommand:infinium.improveSelection",
+    "onCommand:infinium.pickRepo"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "infinium.askQuestion",
+        "title": "Infinium: Ask a question"
+      },
+      {
+        "command": "infinium.explainSelection",
+        "title": "Infinium: Explain selected code"
+      },
+      {
+        "command": "infinium.improveSelection",
+        "title": "Infinium: Suggest improvements for selection"
+      },
+      {
+        "command": "infinium.pickRepo",
+        "title": "Infinium: Choose default repository"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "infinium.explainSelection",
+          "when": "editorHasSelection",
+          "group": "infinium@1"
+        },
+        {
+          "command": "infinium.improveSelection",
+          "when": "editorHasSelection",
+          "group": "infinium@2"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Infinium",
+      "properties": {
+        "infinium.apiUrl": {
+          "type": "string",
+          "default": "http://localhost:8000",
+          "description": "Base URL of the Infinium backend."
+        },
+        "infinium.repoName": {
+          "type": "string",
+          "default": "",
+          "description": "Default repository to scope queries to. Leave blank to query all indexed repos."
+        },
+        "infinium.jwtToken": {
+          "type": "string",
+          "default": "",
+          "description": "Optional JWT from /api/auth/github — required only for private-repo queries."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0"
+  }
+}

@@ -16,7 +16,7 @@ from backend.ingestion.pipeline import (
     ingest_local_folder,
     get_ingestion_status,
 )
-from backend.auth.jwt_handler import get_current_user
+from backend.auth.jwt_handler import get_current_user, get_current_user_optional
 from backend.auth.models import UserStore
 from backend.config import settings
 
@@ -43,8 +43,9 @@ async def ingest_github_repo(
         req.repo_url,
         req.repo_name,
         github_token=github_token,
+        ingested_by=current_user.get("login", ""),
     )
-    
+
     return IngestResponse(
         status="ingestion_started",
         repo_name=req.repo_name,
@@ -56,18 +57,20 @@ async def ingest_github_repo(
 async def ingest_local(
     req: IngestLocalRequest,
     background_tasks: BackgroundTasks,
+    current_user: Optional[dict] = Depends(get_current_user_optional),
 ):
     """Ingest a local folder (no auth required — for dev/testing).
-    
+
     This endpoint is useful for testing or for repos already cloned on disk.
     """
     if not os.path.exists(req.folder_path):
         raise HTTPException(status_code=404, detail=f"Folder not found: {req.folder_path}")
-    
+
     background_tasks.add_task(
         ingest_local_folder,
         req.folder_path,
         req.repo_name,
+        ingested_by=(current_user.get("login", "") if current_user else ""),
     )
     
     return IngestResponse(

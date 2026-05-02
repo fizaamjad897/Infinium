@@ -17,6 +17,7 @@ from backend.rag.generator import generate_response
 from backend.rag.reasoning import ReasoningTrace, StepTimer
 from backend.rag.conversation import format_history_for_prompt, add_turn
 from backend.ingestion.embedder import list_collections
+from backend.analytics.query_history import record_query
 from backend.config import settings
 
 
@@ -31,6 +32,8 @@ def ask(
     conversation_id: str = None,
     branch_filter: Optional[str] = None,
     chunk_types: Optional[list] = None,
+    user_login: str = "anonymous",
+    interface: str = "api",
 ) -> dict:
     """Ask a question about a single repository.
 
@@ -75,7 +78,7 @@ def ask(
 
     if not chunks:
         trace.finish()
-        return {
+        empty = {
             "answer": f"I couldn't find relevant context in the '{repo_name}' repository for your question. "
                       "Make sure the repository has been ingested and try rephrasing your question.",
             "sources": [],
@@ -85,6 +88,13 @@ def ask(
             "chunks_retrieved": 0,
             "reasoning_trace": trace.to_dict(),
         }
+        try:
+            record_query(query, empty["answer"], repo_name=repo_name,
+                         user_login=user_login, sources_count=0,
+                         model=empty["model"], interface=interface)
+        except Exception:
+            pass
+        return empty
 
     # Generate response
     result = generate_response(
@@ -101,6 +111,21 @@ def ask(
     if conversation_id:
         add_turn(conversation_id, query, result.get("answer", ""), result.get("sources", []))
 
+    # Persist for analytics
+    try:
+        record_query(
+            query=query,
+            answer=result.get("answer", ""),
+            repo_name=repo_name,
+            user_login=user_login,
+            sources_count=len(result.get("sources", [])),
+            duration_ms=result.get("total_duration_ms", 0),
+            model=result.get("model", ""),
+            interface=interface,
+        )
+    except Exception:
+        pass
+
     return result
 
 
@@ -115,6 +140,8 @@ def ask_all(
     conversation_id: str = None,
     branch_filter: Optional[str] = None,
     chunk_types: Optional[list] = None,
+    user_login: str = "anonymous",
+    interface: str = "api",
 ) -> dict:
     """Ask a question across ALL indexed repositories (whole codebase mode).
 
@@ -208,5 +235,20 @@ def ask_all(
     # Save to conversation history
     if conversation_id:
         add_turn(conversation_id, query, result.get("answer", ""), result.get("sources", []))
+
+    # Persist for analytics — multi-repo queries are tagged with "*" repo
+    try:
+        record_query(
+            query=query,
+            answer=result.get("answer", ""),
+            repo_name="*all*",
+            user_login=user_login,
+            sources_count=len(result.get("sources", [])),
+            duration_ms=result.get("total_duration_ms", 0),
+            model=result.get("model", ""),
+            interface=interface,
+        )
+    except Exception:
+        pass
 
     return result

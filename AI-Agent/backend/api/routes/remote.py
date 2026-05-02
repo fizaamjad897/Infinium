@@ -3,9 +3,11 @@ Remote URL Ingestion Route
 POST /api/ingest/url — Index any public GitHub repo without cloning.
 """
 from __future__ import annotations
-from fastapi import APIRouter, BackgroundTasks
+from typing import Optional
+from fastapi import APIRouter, BackgroundTasks, Depends
 from backend.api.models import RemoteIngestRequest, IngestResponse
 from backend.ingestion.pipeline import ingest_remote_url
+from backend.auth.jwt_handler import get_current_user_optional
 
 router = APIRouter(prefix="/api/ingest", tags=["Ingestion"])
 
@@ -14,6 +16,7 @@ router = APIRouter(prefix="/api/ingest", tags=["Ingestion"])
 async def ingest_remote_repo(
     request: RemoteIngestRequest,
     background_tasks: BackgroundTasks,
+    current_user: Optional[dict] = Depends(get_current_user_optional),
 ):
     """Index any public GitHub repository without cloning it.
 
@@ -34,6 +37,7 @@ async def ingest_remote_repo(
         repo_name=request.repo_name,
         branch=request.branch,
         github_token=request.github_token,
+        ingested_by=(current_user.get("login", "") if current_user else ""),
     )
 
     return IngestResponse(

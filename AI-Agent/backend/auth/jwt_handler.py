@@ -5,6 +5,7 @@ JWT Token Handler
 """
 import jwt
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 from fastapi import HTTPException, Request, Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from backend.config import settings
@@ -55,7 +56,7 @@ async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Security(security),
 ) -> dict:
     """FastAPI dependency to get the current authenticated user.
-    
+
     Usage:
         @app.get("/protected")
         async def protected(user: dict = Depends(get_current_user)):
@@ -63,5 +64,21 @@ async def get_current_user(
     """
     if credentials is None:
         raise HTTPException(status_code=401, detail="Not authenticated. Please login via /api/auth/github")
-    
+
     return verify_token(credentials.credentials)
+
+
+async def get_current_user_optional(
+    credentials: HTTPAuthorizationCredentials = Security(security),
+) -> Optional[dict]:
+    """Soft auth — returns the user dict if a valid JWT is present, else None.
+
+    Use this for endpoints that work for both anonymous and logged-in users
+    (e.g. ingesting public repos, submitting feedback).
+    """
+    if credentials is None:
+        return None
+    try:
+        return verify_token(credentials.credentials)
+    except HTTPException:
+        return None
