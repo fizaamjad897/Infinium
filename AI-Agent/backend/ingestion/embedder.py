@@ -19,14 +19,21 @@ def get_chroma_client() -> chromadb.PersistentClient:
 
 
 def get_chroma_collection(repo_name: str, client: Optional[chromadb.PersistentClient] = None):
-    """Get or create a ChromaDB collection for a repository."""
+    """Get or create a ChromaDB collection for a repository.
+
+    Sanitises any owner/name combination (incl. unicode, slashes, dots) into a
+    ChromaDB-valid collection name (alphanumeric/.-_, must start+end alnum,
+    length 3-512).
+    """
     if client is None:
         client = get_chroma_client()
 
-    collection_name = repo_name.replace("/", "_").replace("-", "_").replace(".", "_")
-    collection_name = collection_name[:63]
-    if len(collection_name) < 3:
-        collection_name = collection_name + "_repo"
+    import re
+    collection_name = re.sub(r'[^a-zA-Z0-9._-]', '_', repo_name)
+    collection_name = collection_name.strip('._-')
+    if not collection_name or len(collection_name) < 3:
+        collection_name = f"repo_{abs(hash(repo_name)) % 10000}"
+    collection_name = collection_name[:512]
 
     return client.get_or_create_collection(
         name=collection_name,

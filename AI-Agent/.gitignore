@@ -1,0 +1,9 @@
+venv/
+__pycache__/
+.env
+*.pyc
+.DS_Store
+chroma_db/
+repo_cache/
+data/*.json
+!data/.gitkeep

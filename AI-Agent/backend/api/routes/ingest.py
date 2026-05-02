@@ -16,7 +16,7 @@ from backend.ingestion.pipeline import (
     ingest_local_folder,
     get_ingestion_status,
 )
-from backend.auth.jwt_handler import get_current_user, get_current_user_optional
+from backend.auth.jwt_handler import get_current_user_optional
 from backend.auth.models import UserStore
 from backend.config import settings
 
@@ -28,22 +28,42 @@ user_store = UserStore()
 async def ingest_github_repo(
     req: IngestRequest,
     background_tasks: BackgroundTasks,
-    current_user: dict = Depends(get_current_user),
+    x_github_token: Optional[str] = Header(None, description="GitHub access token forwarded by the Node.js backend"),
+    x_user_login: Optional[str] = Header(None, description="GitHub login of the requesting user (forwarded by Node)"),
+    current_user: Optional[dict] = Depends(get_current_user_optional),
 ):
     """Start ingesting a GitHub repository (runs as background task).
-    
-    Uses the authenticated user's GitHub token for private repo access.
+
+    Auth resolution (in order):
+      1. ``X-GitHub-Token`` header — the canonical path used by the Node.js
+         backend, which already authenticated the user and forwards their
+         GitHub token here.
+      2. Stored OAuth token from a JWT'd user — direct access (e.g. via the
+         VS Code extension or curl with the JWT).
+      3. None — only public repos can be ingested.
     """
-    # Get user's GitHub token for private repo access
-    user = user_store.get_user(current_user["github_id"])
-    github_token = user.get("access_token") if user else None
-    
+    # Priority 1: Node.js-supplied token
+    github_token = x_github_token
+
+    # Priority 2: fall back to stored OAuth token from the JWT'd user
+    user_login = x_user_login or ""
+    if not github_token and current_user:
+        user = user_store.get_user(current_user["github_id"])
+        github_token = user.get("access_token") if user else None
+        user_login = user_login or current_user.get("login", "")
+
+    if github_token:
+        print(f"   🔑 Token resolved for {req.repo_name} (source: "
+              f"{'node-backend' if x_github_token else 'oauth'})")
+    else:
+        print(f"   ⚠️ No GitHub token for {req.repo_name} — public-only access")
+
     background_tasks.add_task(
         ingest_repository,
         req.repo_url,
         req.repo_name,
         github_token=github_token,
-        ingested_by=current_user.get("login", ""),
+        ingested_by=user_login,
     )
 
     return IngestResponse(
