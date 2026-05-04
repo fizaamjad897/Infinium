@@ -10,7 +10,19 @@ from typing import Optional
 class IngestRequest(BaseModel):
     repo_url: str = Field(..., description="GitHub repository URL (e.g., https://github.com/owner/repo)")
     repo_name: str = Field(..., description="Name for the repository (e.g., 'owner_repo')")
-    branch: Optional[str] = Field(None, description="Branch name to ingest (defaults to repo's default branch)")
+    branch: Optional[str] = Field(
+        None,
+        description="Single branch to index. If omitted and `branches` is empty, uses the repo's default branch.",
+    )
+    branches: Optional[list[str]] = Field(
+        None,
+        description=(
+            "Index multiple branches in one ingest. Every file/commit/diff chunk is "
+            "tagged with the branch it came from, so /api/query/cross-branch can "
+            "compare them. Files unchanged across branches are embedded once "
+            "(content-hash deduplication) — minimal extra cost."
+        ),
+    )
     callback_url: Optional[str] = Field(
         None,
         description=(

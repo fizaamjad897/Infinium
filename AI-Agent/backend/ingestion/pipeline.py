@@ -183,49 +183,32 @@ def _chunk_and_store(files, commits_with_diffs, commits_basic, branches, repo_na
 def ingest_repository(
     repo_url: str,
     repo_name: str,
-    branch: Optional[str] = None,  # ← NEW PARAMETER
     github_token: Optional[str] = None,
     ingested_by: str = "",
     callback_url: str = "",
+    branch: Optional[str] = None,
     branches: Optional[list[str]] = None,
 ) -> dict:
     """Full ingestion pipeline for a GitHub repository (cloned).
-    
-    Args:
-        repo_url: GitHub repository URL
-        repo_name: Name for the repository
-        branch: Optional branch name to ingest (defaults to repo's default branch)
-        github_token: Optional GitHub token for private repos
-        ingested_by: GitHub login of user who triggered ingestion
-        callback_url: Optional webhook URL for completion notification
+
+    Branch behaviour:
+      - ``branches=[...]`` → multi-branch: checkout each, walk files, dedupe
+        by content hash, every chunk tagged with its source branch
+      - ``branch="x"``     → single non-default branch checkout + index
+      - both omitted        → default branch (whatever HEAD points to after clone)
     """
     print(f"\n🚀 Starting ingestion for: {repo_name} ({repo_url})")
-    if branch:
-        print(f"   🌿 Target branch: {branch}")
     start_time = time.time()
-    _update_status(repo_name, "cloning", repo_url=repo_url, ingested_by=ingested_by, requested_branch=branch)
+    _update_status(repo_name, "cloning", repo_url=repo_url, ingested_by=ingested_by)
 
     try:
         dest = os.path.join(settings.REPO_CACHE_DIR, repo_name.replace("/", "_"))
         path = clone_repo(repo_url, dest, github_token=github_token)
 
-        # Checkout specific branch if provided
-        if branch:
-            try:
-                import git
-                repo = git.Repo(dest)
-                
-                # Fetch all branches
-                repo.git.fetch('--all')
-                
-                # Checkout the specified branch
-                repo.git.checkout(branch)
-                print(f"   🌿 Checked out branch: {branch}")
-                _update_status(repo_name, "cloning", branch=branch, branch_checked_out=True)
-            except Exception as e:
-                print(f"   ⚠️ Failed to checkout branch '{branch}': {e}")
-                print(f"   📌 Falling back to default branch")
-                # Continue with default branch
+        # Make sure all remote branches are available locally before checkout
+        if branches or branch:
+            print(f"   🌿 Fetching all remote branches…")
+            fetch_all_remote_branches(path)
 
         _update_status(repo_name, "scanning_files")
         print(f"   🔍 Scanning files...")
@@ -239,16 +222,8 @@ def ingest_repository(
         print(f"   📄 {len(files)} source files (after dedup if multi-branch)")
 
         _update_status(repo_name, "extracting_branches")
-        print(f"   🌿 Extracting branches...")
-        branches = extract_branches(path)
-        
-        # Mark the ingested branch if specified
-        if branch:
-            for b in branches:
-                if b.get("name") == branch:
-                    b["is_ingested_branch"] = True
-                    print(f"   🎯 Primary branch: {branch}")
-                    break
+        print(f"   🌿 Extracting branch metadata...")
+        branch_meta = extract_branches(path)
 
         _update_status(repo_name, "extracting_diffs")
         print(f"   📜 Extracting commit diffs (last {settings.MAX_COMMITS} commits)...")
@@ -272,7 +247,6 @@ def ingest_repository(
             "branches_indexed": branches or ([branch] if branch else []),
             "total_chunks": total,
             "elapsed_seconds": elapsed,
-            "ingested_branch": branch if branch else "default",
         }
         _update_status(repo_name, "complete", repo_url=repo_url, **stats)
         print(f"   ✅ Ingestion complete in {elapsed}s!")
