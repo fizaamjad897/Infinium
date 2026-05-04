@@ -183,6 +183,29 @@
     "branches_indexed": [],
     "total_chunks": 312,
     "elapsed_seconds": 351.3,
-    "ingested_branch": "default"
+    "ingested_branch": "default",
+    "requested_branch": null
+  },
+  "cc": {
+    "status": "complete",
+    "updated_at": "2026-05-04T19:54:48.883844",
+    "repo_url": "https://github.com/Arindam200/awesome-ai-apps.git",
+    "source": "remote_url",
+    "ingested_by": "",
+    "chunks_processed": 1940,
+    "chunks_total": 1940,
+    "percent_complete": 100.0,
+    "embed_rate_per_sec": 13.6,
+    "eta_seconds": 0,
+    "chunks_stored": 1940,
+    "files_processed": 593,
+    "commits_processed": 200,
+    "branches_processed": 10,
+    "branches_indexed": [
+      "main"
+    ],
+    "total_chunks": 1940,
+    "elapsed_seconds": 421.6,
+    "ingested_branch": "main"
   }
 }
