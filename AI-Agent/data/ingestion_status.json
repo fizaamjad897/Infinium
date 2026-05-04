@@ -166,30 +166,23 @@
     "source": "remote_url",
     "error": "404 Client Error: Not Found for url: https://api.github.com/repos/RaveehaMohsin/Skill-Tracker"
   },
-  "CareerTrack-AI-Tayyaba": {
-    "status": "complete",
-    "updated_at": "2026-05-04T18:48:37.790158",
-    "repo_url": "https://github.com/RaveehaMohsin/CareerTrack-AI",
-    "ingested_by": "",
-    "requested_branch": null,
-    "chunks_processed": 251,
-    "chunks_total": 251,
-    "percent_complete": 100.0,
-    "embed_rate_per_sec": 0.29,
-    "eta_seconds": 0,
-    "chunks_stored": 251,
-    "files_processed": 151,
-    "commits_processed": 15,
-    "branches_processed": 7,
-    "total_chunks": 251,
-    "elapsed_seconds": 901.4,
-    "ingested_branch": "default"
-  },
   "CareerTrack-AI": {
-    "status": "embedding",
-    "updated_at": "2026-05-04T19:15:48.249427",
+    "status": "complete",
+    "updated_at": "2026-05-04T20:36:27.172545",
     "repo_url": "https://github.com/RaveehaMohsin/CareerTrack-AI",
     "ingested_by": "",
-    "requested_branch": null
+    "chunks_processed": 312,
+    "chunks_total": 312,
+    "percent_complete": 100.0,
+    "embed_rate_per_sec": 0.89,
+    "eta_seconds": 0,
+    "chunks_stored": 312,
+    "files_processed": 149,
+    "commits_processed": 1,
+    "branches_processed": 7,
+    "branches_indexed": [],
+    "total_chunks": 312,
+    "elapsed_seconds": 351.3,
+    "ingested_branch": "default"
   }
 }

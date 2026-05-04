@@ -189,41 +189,76 @@ def ingest_repository(
     branch: Optional[str] = None,
     branches: Optional[list[str]] = None,
 ) -> dict:
-    """Full ingestion pipeline for a GitHub repository (cloned).
+    """Full ingestion pipeline for a GitHub repository (cloned)."""
 
-    Branch behaviour:
-      - ``branches=[...]`` → multi-branch: checkout each, walk files, dedupe
-        by content hash, every chunk tagged with its source branch
-      - ``branch="x"``     → single non-default branch checkout + index
-      - both omitted        → default branch (whatever HEAD points to after clone)
-    """
-    print(f"\n🚀 Starting ingestion for: {repo_name} ({repo_url})")
+    # ========== DEBUG: PRINT ALL PARAMETERS ==========
+    print(f"\n{'='*60}")
+    print(f"🚀 STARTING INGESTION DEBUG")
+    print(f"{'='*60}")
+    print(f"   📦 Repo Name: {repo_name}")
+    print(f"   🔗 Repo URL: {repo_url}")
+    print(f"   🔑 GitHub Token: {'[HIDDEN]' if github_token else 'None'} (length: {len(github_token) if github_token else 0})")
+    print(f"   👤 Ingested By: {ingested_by}")
+    print(f"   📞 Callback URL: {callback_url or 'None'}")
+    print(f"   🌿 Branch (single): {branch or 'None'}")
+    print(f"   🌿 Branches (multi): {branches or 'None'}")
+    print(f"{'='*60}\n")
+    
     start_time = time.time()
     _update_status(repo_name, "cloning", repo_url=repo_url, ingested_by=ingested_by)
 
     try:
         dest = os.path.join(settings.REPO_CACHE_DIR, repo_name.replace("/", "_"))
+        print(f"   📂 Clone destination: {dest}")
+        
         path = clone_repo(repo_url, dest, github_token=github_token)
+        print(f"   ✅ Clone successful at: {path}")
 
         # Make sure all remote branches are available locally before checkout
         if branches or branch:
             print(f"   🌿 Fetching all remote branches…")
             fetch_all_remote_branches(path)
+            print(f"   ✅ Remote branches fetched")
+            
+            # List available branches after fetch
+            import git
+            repo = git.Repo(path)
+            available_branches = [b.name for b in repo.branches]
+            print(f"   🌿 Available branches: {available_branches[:15]}{'...' if len(available_branches) > 15 else ''}")
+            
+            # Check if requested branch exists
+            if branch:
+                if branch in available_branches:
+                    print(f"   ✅ Requested branch '{branch}' exists!")
+                else:
+                    print(f"   ⚠️ WARNING: Requested branch '{branch}' NOT found in available branches!")
+                    print(f"   📌 Available: {available_branches[:10]}")
+        else:
+            print(f"   🌿 No branch specified, using default branch")
 
         _update_status(repo_name, "scanning_files")
         print(f"   🔍 Scanning files...")
 
         if branches:
+            print(f"   🌿 Multi-branch mode: indexing {len(branches)} branches: {branches}")
             files = _walk_files_multi_branch(path, branches)
         elif branch:
+            print(f"   🌿 Single-branch mode: indexing branch '{branch}'")
             files = walk_files_at_branch(path, branch)
         else:
+            print(f"   🌿 Default branch mode: indexing default branch")
             files = walk_files(path)
-        print(f"   📄 {len(files)} source files (after dedup if multi-branch)")
+        
+        print(f"   📄 {len(files)} source files found")
 
         _update_status(repo_name, "extracting_branches")
         print(f"   🌿 Extracting branch metadata...")
         branch_meta = extract_branches(path)
+        print(f"   🌿 Found {len(branch_meta)} branches total")
+        
+        # Print branch names for debugging
+        branch_names = [b.get("name", "unknown") for b in branch_meta]
+        print(f"   🌿 Branch names: {branch_names}")
 
         _update_status(repo_name, "extracting_diffs")
         print(f"   📜 Extracting commit diffs (last {settings.MAX_COMMITS} commits)...")
@@ -247,18 +282,31 @@ def ingest_repository(
             "branches_indexed": branches or ([branch] if branch else []),
             "total_chunks": total,
             "elapsed_seconds": elapsed,
+            "ingested_branch": branch if branch else ("multi" if branches else "default"),
         }
+        
+        print(f"\n{'='*60}")
+        print(f"✅ INGESTION COMPLETE")
+        print(f"{'='*60}")
+        print(f"   📊 Stats: {stats}")
+        print(f"{'='*60}\n")
+        
         _update_status(repo_name, "complete", repo_url=repo_url, **stats)
-        print(f"   ✅ Ingestion complete in {elapsed}s!")
         _post_callback(callback_url, {"status": "complete", "repo_name": repo_name, **stats})
         return stats
 
     except Exception as e:
+        print(f"\n{'='*60}")
+        print(f"❌ INGESTION FAILED")
+        print(f"{'='*60}")
+        print(f"   Error: {e}")
+        import traceback
+        print(f"   Traceback: {traceback.format_exc()}")
+        print(f"{'='*60}\n")
+        
         _update_status(repo_name, "error", error=str(e))
-        print(f"   ❌ Ingestion failed: {e}")
         _post_callback(callback_url, {"status": "error", "repo_name": repo_name, "error": str(e)})
         raise
-
 
 def ingest_local_folder(
     folder_path: str,

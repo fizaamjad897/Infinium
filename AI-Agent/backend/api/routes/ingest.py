@@ -57,23 +57,13 @@ async def _is_repo_private(repo_url: str, token: Optional[str]) -> Optional[bool
 async def ingest_private_repo(
     req: IngestRequest,
     background_tasks: BackgroundTasks,
-    x_github_token: Optional[str] = Header(None, description="GitHub token forwarded by the Node.js backend"),
-    x_user_login: Optional[str] = Header(None, description="GitHub login forwarded by Node"),
+    x_github_token: Optional[str] = Header(None),
+    x_user_login: Optional[str] = Header(None),
     current_user: Optional[dict] = Depends(get_current_user_optional),
 ):
-    """Clone + index a **private** GitHub repository.
-
-    Auth required. Token resolution order:
-      1. ``X-GitHub-Token`` header (Node.js backend path)
-      2. Logged-in user's stored OAuth token (browser/IDE path)
-      3. → 401
-
-    Will reject the request if the URL is a public repo, with a hint to use
-    /api/ingest/public instead.
-    """
-    # Resolve user token (NOT the server-level token — that belongs to the org)
     github_token = x_github_token
     user_login = x_user_login or ""
+    
     if not github_token and current_user:
         user = user_store.get_user(current_user["github_id"])
         github_token = user.get("access_token") if user else None
@@ -82,47 +72,34 @@ async def ingest_private_repo(
     if not github_token:
         raise HTTPException(
             status_code=401,
-            detail=(
-                "Auth required for private-repo ingestion. Supply 'X-GitHub-Token' "
-                "header (PAT with 'repo' scope) or a JWT bearer token from /api/auth/github."
-            ),
+            detail="Auth required for private-repo ingestion. Supply 'X-GitHub-Token' header."
         )
 
-    # Confirm the URL really is private — reject early with a clear hint otherwise
+    # Check visibility but DON'T REJECT - just log it
     is_private = await _is_repo_private(req.repo_url, github_token)
     if is_private is False:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"'{req.repo_url}' is a PUBLIC repository. "
-                "Use /api/ingest/public for public repos (no auth needed)."
-            ),
-        )
-    # is_private is None means GitHub didn't respond cleanly — proceed anyway,
-    # the clone step will produce a clearer error if access is genuinely missing.
+        print(f"   🌍 Public repo detected for {req.repo_name} — will index without auth (token will be ignored)")
+    else:
+        print(f"   🔒 Private repo detected for {req.repo_name}")
 
-    print(f"   🔑 Token resolved for {req.repo_name} (private path)")
+    print(f"   🔑 Token resolved for {req.repo_name}")
 
     background_tasks.add_task(
         ingest_repository,
-        req.repo_url,
-        req.repo_name,
-        github_token=github_token,
+        repo_url=req.repo_url,
+        repo_name=req.repo_name,
+        branch=req.branch,
+        github_token=github_token,  # Will be ignored for public repos
         ingested_by=user_login,
         callback_url=req.callback_url or "",
-        branch=req.branch,
-        branches=req.branches,
     )
 
+    branch_msg = f"branch '{req.branch}'" if req.branch else "default branch"
     return IngestResponse(
         status="ingestion_started",
         repo_name=req.repo_name,
-        message=(
-            f"Background ingestion started for private repo {req.repo_name}. "
-            f"Check /api/repos/{req.repo_name}/status for progress."
-        ),
+        message=f"Background ingestion started for {req.repo_name} ({branch_msg}).",
     )
-
 
 # ── Local-folder ingestion ──
 
