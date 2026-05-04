@@ -10,6 +10,19 @@ from typing import Optional
 class IngestRequest(BaseModel):
     repo_url: str = Field(..., description="GitHub repository URL (e.g., https://github.com/owner/repo)")
     repo_name: str = Field(..., description="Name for the repository (e.g., 'owner_repo')")
+    branch: Optional[str] = Field(
+        None,
+        description="Single branch to index. If omitted and `branches` is empty, uses the repo's default branch.",
+    )
+    branches: Optional[list[str]] = Field(
+        None,
+        description=(
+            "Index multiple branches in one ingest. Every file/commit/diff chunk is "
+            "tagged with the branch it came from, so /api/query/cross-branch can "
+            "compare them. Files unchanged across branches are embedded once "
+            "(content-hash deduplication) — minimal extra cost."
+        ),
+    )
     callback_url: Optional[str] = Field(
         None,
         description=(
@@ -23,13 +36,19 @@ class IngestRequest(BaseModel):
 class IngestLocalRequest(BaseModel):
     folder_path: str = Field(..., description="Absolute path to the local folder to ingest")
     repo_name: str = Field(..., description="Name for the repository")
+    branch: Optional[str] = Field(None, description="Single branch to checkout + index (if folder is a git repo)")
+    branches: Optional[list[str]] = Field(None, description="Multi-branch indexing (see IngestRequest.branches)")
     callback_url: Optional[str] = Field(None, description="POST'd when ingestion finishes")
 
 
 class RemoteIngestRequest(BaseModel):
     repo_url: str = Field(..., description="Public GitHub repo URL (e.g., https://github.com/owner/repo)")
     repo_name: str = Field(..., description="Name for the repository in the index")
-    branch: Optional[str] = Field(None, description="Branch to index (default: repo's default branch)")
+    branch: Optional[str] = Field(None, description="Single branch to index (default: repo's default branch)")
+    branches: Optional[list[str]] = Field(
+        None,
+        description="Multi-branch indexing — downloads one tarball per branch and tags chunks with branch metadata.",
+    )
     github_token: Optional[str] = Field(None, description="GitHub token for private repos or higher rate limits (5000/hr vs 60/hr)")
     callback_url: Optional[str] = Field(None, description="POST'd when ingestion finishes")
 

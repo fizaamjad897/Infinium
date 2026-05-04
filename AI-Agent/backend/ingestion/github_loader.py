@@ -247,6 +247,71 @@ def walk_files(repo_path: str) -> list[dict]:
     return files
 
 
+def list_local_branch_names(repo_path: str) -> list[str]:
+    """Names of local branches in a cloned repo."""
+    if git is None:
+        return []
+    try:
+        repo = git.Repo(repo_path)
+        return [b.name for b in repo.branches]
+    except Exception:
+        return []
+
+
+def fetch_all_remote_branches(repo_path: str) -> None:
+    """Fetch all remote branches into local tracking refs so we can checkout any branch."""
+    if git is None:
+        return
+    try:
+        repo = git.Repo(repo_path)
+        for remote in repo.remotes:
+            try:
+                remote.fetch()
+            except Exception as e:
+                print(f"   ⚠️ Failed to fetch from {remote.name}: {e}")
+    except Exception as e:
+        print(f"   ⚠️ Could not fetch remotes: {e}")
+
+
+def checkout_branch(repo_path: str, branch_name: str) -> bool:
+    """Checkout ``branch_name`` (creating a local tracking branch from origin/<name>
+    if needed). Returns True on success.
+    """
+    if git is None:
+        return False
+    try:
+        repo = git.Repo(repo_path)
+        # Local branch exists?
+        if branch_name in [b.name for b in repo.branches]:
+            repo.git.checkout(branch_name)
+            return True
+        # Remote tracking ref?
+        remote_ref = f"origin/{branch_name}"
+        if remote_ref in [r.name for r in repo.remote().refs]:
+            repo.git.checkout("-B", branch_name, remote_ref)
+            return True
+        # Try as a raw ref (tag, sha, etc.)
+        repo.git.checkout(branch_name)
+        return True
+    except Exception as e:
+        print(f"   ⚠️ Checkout {branch_name} failed: {e}")
+        return False
+
+
+def walk_files_at_branch(repo_path: str, branch_name: str) -> list[dict]:
+    """Checkout ``branch_name`` and walk every supported file at that branch.
+
+    Each returned file dict gets a ``branch`` field so downstream chunkers can
+    tag chunks with branch metadata.
+    """
+    if not checkout_branch(repo_path, branch_name):
+        return []
+    files = walk_files(repo_path)
+    for f in files:
+        f["branch"] = branch_name
+    return files
+
+
 def validate_github_access(repo_url: str, github_token: str) -> dict:
     """Check if user has access to a GitHub repository."""
     import httpx

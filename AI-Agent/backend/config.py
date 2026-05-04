@@ -36,6 +36,25 @@ class Settings(BaseSettings):
     CHUNK_OVERLAP: int = 128      # words overlap (raised from 64 for better context continuity)
     MAX_COMMITS: int = 200        # reduced: diffs are larger than plain commits
 
+    # Hard cap on chunks generated per single file. Two separate caps so
+    # data-heavy files (JSON/YAML) can't blow up the index, but real code
+    # files are allowed many chunks (one per function/class).
+    MAX_CHUNKS_PER_CODE_FILE: int = 50      # generous — a 50-method class is fine
+    MAX_CHUNKS_PER_DATA_FILE: int = 6       # tight — n8n workflow JSONs etc.
+
+    # Use the AST/function-aware chunker for code files. False = fall back to
+    # word-count chunking. Leave True for code refactoring quality.
+    AST_CHUNKING_ENABLED: bool = True
+
+    # Comma-separated list of file extensions to skip during ingestion entirely.
+    # Default skips lockfiles. Add e.g. ".json,.csv" via .env for data-heavy repos.
+    SKIP_EXTENSIONS: str = ".lock"
+
+    # For data-heavy formats, use a much larger chunk size — fewer chunks
+    # per file because they're rarely worth fine-grained retrieval.
+    LARGE_CHUNK_EXTENSIONS: str = ".json,.yaml,.yml,.csv,.txt"
+    LARGE_CHUNK_SIZE: int = 2048
+
     # ── RAG ──
     RAG_TOP_K: int = 5               # Fewer chunks → smaller prompt → faster LLM
     RELEVANCE_THRESHOLD: float = 0.40  # Higher threshold filters weak matches

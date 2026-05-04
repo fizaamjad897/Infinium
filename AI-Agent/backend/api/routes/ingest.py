@@ -110,6 +110,8 @@ async def ingest_private_repo(
         github_token=github_token,
         ingested_by=user_login,
         callback_url=req.callback_url or "",
+        branch=req.branch,
+        branches=req.branches,
     )
 
     return IngestResponse(
@@ -141,6 +143,8 @@ async def ingest_local(
         req.repo_name,
         ingested_by=(current_user.get("login", "") if current_user else ""),
         callback_url=req.callback_url or "",
+        branch=req.branch,
+        branches=req.branches,
     )
 
     return IngestResponse(

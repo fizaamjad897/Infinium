@@ -53,11 +53,13 @@ _model_warmup_lock = threading.Lock()
 
 
 def _warm_up_embed_model() -> None:
-    """One synchronous probe call to load the embed model into memory.
+    """Synchronous probe + pin: loads the embed model into memory and tells
+    Ollama to KEEP it loaded (``keep_alive: -1``).
 
-    Subsequent parallel calls then hit a warm model and don't trip the
-    cold-load thundering-herd that triggers 400s on some Ollama builds.
-    Idempotent — only runs once per process.
+    Without this, Ollama's default 5-minute keep_alive can evict the embed
+    model during ingestion when other models (kimi/minimax cloud) are also
+    in play. Each eviction = ~600ms cold reload on the next call, which
+    explains slow ingestions that should be fast.
     """
     global _model_warmed, _supports_batch_endpoint
     if _model_warmed:
@@ -66,35 +68,38 @@ def _warm_up_embed_model() -> None:
         if _model_warmed:
             return
         session = _get_session()
-        # Try the batch endpoint first (this also probes for support)
         try:
             resp = session.post(
                 f"{settings.OLLAMA_BASE_URL}/api/embed",
-                json={"model": settings.EMBED_MODEL, "input": "warmup"},
-                timeout=120,                   # cold model load can take ~30s
+                json={
+                    "model": settings.EMBED_MODEL,
+                    "input": "warmup",
+                    "keep_alive": -1,    # pin forever
+                },
+                timeout=120,
             )
             if resp.status_code == 200:
                 _supports_batch_endpoint = True
                 _model_warmed = True
-                print(f"   🔥 Warmed {settings.EMBED_MODEL} via /api/embed — model ready")
+                print(f"   🔥 Pinned {settings.EMBED_MODEL} via /api/embed (keep_alive: -1)")
                 return
             elif resp.status_code in (400, 404):
                 body = (resp.text or "")[:300]
                 print(f"   ⚠️ /api/embed warmup got {resp.status_code}: {body!r}")
-                _supports_batch_endpoint = False
+                # NOTE: do NOT permanently disable — try per-call later, the
+                # error might be content-specific not schema-incompatible.
         except Exception as e:
             print(f"   ⚠️ /api/embed warmup error: {e}")
-            _supports_batch_endpoint = False
 
-        # Fall back to legacy endpoint for warmup
+        # Always pin via legacy endpoint as a safety net
         try:
             resp = session.post(
                 f"{settings.OLLAMA_BASE_URL}/api/embeddings",
-                json={"model": settings.EMBED_MODEL, "prompt": "warmup"},
+                json={"model": settings.EMBED_MODEL, "prompt": "warmup", "keep_alive": -1},
                 timeout=120,
             )
             if resp.status_code == 200:
-                print(f"   🔥 Warmed {settings.EMBED_MODEL} via /api/embeddings — model ready")
+                print(f"   🔥 Pinned {settings.EMBED_MODEL} via /api/embeddings (keep_alive: -1)")
             else:
                 print(f"   ⚠️ /api/embeddings warmup got {resp.status_code}")
         except Exception as e:
@@ -130,45 +135,68 @@ def get_chroma_collection(repo_name: str, client: Optional[chromadb.PersistentCl
     )
 
 
-# nomic-embed-text context window is ~8192 tokens.
-# We use chars as a proxy: avg 4 chars/token → 8192*4 = 32768 chars max.
-# We cap at 6000 chars (conservative) to avoid any tokenizer surprises.
-MAX_EMBED_CHARS = 6000
+# nomic-embed-text claims an 8192-token context window, but for dense code
+# (lots of symbols, few spaces) the tokenizer can hit ~1.2 tokens/char which
+# pushes a 6000-char chunk over the limit. 3000 chars is a safer cap that
+# fits even the densest code chunks.
+MAX_EMBED_CHARS = 3000
+
+# When Ollama returns "input length exceeds the context length" we'll
+# aggressively re-truncate the offending text and retry. This is the
+# minimum length we'll truncate to before giving up and zero-vectoring.
+MIN_EMBED_CHARS = 500
 
 
-def _truncate_for_embed(text: str) -> str:
-    """Truncate text to fit nomic-embed-text's context window.
-    Adds a truncation marker if text was cut.
-    """
-    if len(text) <= MAX_EMBED_CHARS:
+def _truncate_for_embed(text: str, max_chars: int = MAX_EMBED_CHARS) -> str:
+    """Truncate text to fit nomic-embed-text's context window."""
+    if len(text) <= max_chars:
         return text
-    return text[:MAX_EMBED_CHARS] + "\n... [truncated for embedding]"
+    return text[:max_chars] + "\n... [truncated for embedding]"
+
+
+def _is_context_length_error(resp_text: str) -> bool:
+    """Heuristic: does this Ollama error body indicate context overflow?"""
+    if not resp_text:
+        return False
+    lowered = resp_text.lower()
+    return ("context length" in lowered
+            or "context window" in lowered
+            or "exceeds" in lowered and "length" in lowered)
 
 
 def _ollama_embed(text: str, retries: int = 3) -> list[float]:
     """Single-text embed via Ollama's legacy /api/embeddings endpoint.
 
     Used as a fallback inside the batch function and for one-off query embeds.
+    Pins the model in memory with ``keep_alive: -1`` so it doesn't reload.
+
+    Context-length errors are handled by progressively halving the text
+    until it fits or we hit ``MIN_EMBED_CHARS``.
     """
     text = _truncate_for_embed(text)
     session = _get_session()
 
+    current = text
     for attempt in range(retries):
         try:
             resp = session.post(
                 f"{settings.OLLAMA_BASE_URL}/api/embeddings",
-                json={"model": settings.EMBED_MODEL, "prompt": text},
+                json={
+                    "model": settings.EMBED_MODEL,
+                    "prompt": current,
+                    "keep_alive": -1,
+                },
                 timeout=60,
             )
-            if resp.status_code == 500 and len(text) > 2000:
-                short = text[:2000] + "\n... [hard-truncated]"
-                resp2 = session.post(
-                    f"{settings.OLLAMA_BASE_URL}/api/embeddings",
-                    json={"model": settings.EMBED_MODEL, "prompt": short},
-                    timeout=60,
-                )
-                if resp2.status_code == 200:
-                    return resp2.json()["embedding"]
+
+            # Context-length error → aggressively halve the text and retry on this attempt
+            if (resp.status_code in (400, 500)
+                    and _is_context_length_error(resp.text)
+                    and len(current) > MIN_EMBED_CHARS):
+                new_len = max(MIN_EMBED_CHARS, len(current) // 2)
+                current = current[:new_len] + "\n... [hard-truncated]"
+                continue   # retry without consuming the attempt — this is a SEPARATE issue from transient failures
+
             resp.raise_for_status()
             return resp.json()["embedding"]
         except Exception as e:
@@ -189,15 +217,27 @@ def _disable_batch_endpoint(reason: str):
 
 
 def _per_text_embed_many(texts: list[str]) -> list[list[float]]:
-    """Embed each text via the legacy /api/embeddings endpoint, swallowing per-text errors."""
-    out: list[list[float]] = []
-    for t in texts:
-        try:
-            out.append(_ollama_embed(t))
-        except Exception as ee:
-            print(f"   ⚠️ Per-text embed failed: {ee}")
-            out.append([0.0] * 768)
-    return out
+    """Embed each text via the legacy /api/embeddings endpoint IN PARALLEL.
+
+    The previous version was sequential — when a single batch fell back to
+    per-text mode, that worker stalled on N sequential 100ms calls instead
+    of running them in parallel. This recovers the lost throughput.
+    """
+    if not texts:
+        return []
+    out: list[Optional[list[float]]] = [None] * len(texts)
+    # Use a small pool so we don't crush Ollama with 8 workers × N texts each
+    inner_workers = min(len(texts), 4)
+    with ThreadPoolExecutor(max_workers=inner_workers) as pool:
+        futures = {pool.submit(_ollama_embed, t): idx for idx, t in enumerate(texts)}
+        for future in as_completed(futures):
+            idx = futures[future]
+            try:
+                out[idx] = future.result()
+            except Exception as ee:
+                print(f"   ⚠️ Per-text embed failed: {ee}")
+                out[idx] = [0.0] * 768
+    return [v if v is not None else [0.0] * 768 for v in out]
 
 
 def _ollama_embed_batch(texts: list[str], retries: int = 2) -> list[list[float]]:
@@ -241,7 +281,7 @@ def _ollama_embed_batch(texts: list[str], retries: int = 2) -> list[list[float]]
         embeds = _per_text_embed_many(cleaned)
         return _interleave_zero_for_empties(embeds, placeholders)
 
-    payload = {"model": settings.EMBED_MODEL, "input": cleaned}
+    payload = {"model": settings.EMBED_MODEL, "input": cleaned, "keep_alive": -1}
 
     for attempt in range(retries):
         try:
@@ -251,26 +291,29 @@ def _ollama_embed_batch(texts: list[str], retries: int = 2) -> list[list[float]]
                 timeout=180,
             )
 
+            # 404 = endpoint genuinely missing → permanently disable (will never work)
             if resp.status_code == 404:
                 _disable_batch_endpoint("endpoint not available (404). "
-                                        "Upgrade Ollama (`brew upgrade ollama`) for the speedup.")
+                                        "Upgrade Ollama (`brew upgrade ollama`).")
                 embeds = _per_text_embed_many(cleaned)
                 return _interleave_zero_for_empties(embeds, placeholders)
 
-            if resp.status_code == 400:
-                # Show the body ONCE so the user can see what Ollama is complaining about
-                body = (resp.text or "")[:400]
-                _disable_batch_endpoint(f"server returned 400 (incompatible schema). "
-                                        f"Body: {body!r}")
+            # 400 / 500 = could be content-specific. Halve to isolate the bad text.
+            if resp.status_code in (400, 500):
+                if len(cleaned) > 1:
+                    mid = len(cleaned) // 2
+                    left = _ollama_embed_batch(cleaned[:mid], retries=1)
+                    right = _ollama_embed_batch(cleaned[mid:], retries=1)
+                    embeds = left + right
+                    return _interleave_zero_for_empties(embeds, placeholders)
+                # Single text still 400/500 — _ollama_embed handles context-length
+                # errors via progressive halving, so the legacy fallback can recover
+                # texts that the batch endpoint refuses.
+                body = (resp.text or "")[:300]
+                if attempt == 0 and not _is_context_length_error(body):
+                    print(f"   ⚠️ Single-text batch returned {resp.status_code}: "
+                          f"{body!r} — falling back to /api/embeddings")
                 embeds = _per_text_embed_many(cleaned)
-                return _interleave_zero_for_empties(embeds, placeholders)
-
-            if resp.status_code == 500 and len(cleaned) > 1:
-                # One bad text in the batch — halve and retry each half
-                mid = len(cleaned) // 2
-                left = _ollama_embed_batch(cleaned[:mid])
-                right = _ollama_embed_batch(cleaned[mid:])
-                embeds = left + right
                 return _interleave_zero_for_empties(embeds, placeholders)
 
             resp.raise_for_status()
@@ -292,7 +335,7 @@ def _ollama_embed_batch(texts: list[str], retries: int = 2) -> list[list[float]]
             if attempt < retries - 1:
                 time.sleep(1.0 * (attempt + 1))
                 continue
-            print(f"   ⚠️ Batch embed errored ({e}) — falling back to per-text for this batch")
+            print(f"   ⚠️ Batch embed errored ({e}) — per-text fallback (this batch only)")
             embeds = _per_text_embed_many(cleaned)
             return _interleave_zero_for_empties(embeds, placeholders)
 

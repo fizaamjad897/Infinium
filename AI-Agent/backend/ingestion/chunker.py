@@ -4,9 +4,11 @@ Smart Text Chunker — Mature Version
 - Larger overlap (128 words) to avoid context loss at boundaries
 - Richer metadata: language, file_path, total_chunks, char_offset
 - New chunk types: branch, commit_diff
+- Per-file chunk cap + per-extension chunk-size override (FR-Performance)
 """
 from __future__ import annotations
 from typing import Optional
+from backend.config import settings
 
 # Maps file extensions to display language names
 LANGUAGE_MAP = {
@@ -59,28 +61,85 @@ def _make_context_prefix(file_dict: dict) -> str:
     return f"[{lang} | {path}]\n"
 
 
+def _parse_ext_set(value: str) -> set[str]:
+    """Parse a comma-separated list of extensions from settings into a set."""
+    return {e.strip().lower() for e in (value or "").split(",") if e.strip()}
+
+
 def chunk_file(file_dict: dict, chunk_size: int = 512, overlap: int = 128) -> list[dict]:
     """Chunk a source file and attach rich metadata to each chunk.
 
-    Each chunk gets:
-    - A context prefix line with language + file path
-    - Metadata: source, type, extension, language, chunk_index, total_chunks, file_size
+    Strategy:
+      1. Skip extensions in ``SKIP_EXTENSIONS`` entirely.
+      2. For supported code languages (Python via AST, JS/TS/Java/Go/Rust via
+         regex), produce **function-aware chunks** — one function/class per
+         chunk. Cap at ``MAX_CHUNKS_PER_CODE_FILE``.
+      3. For data-heavy formats in ``LARGE_CHUNK_EXTENSIONS``, use the much
+         larger ``LARGE_CHUNK_SIZE`` and cap at ``MAX_CHUNKS_PER_DATA_FILE``.
+      4. Fallback: word-count chunking with ``MAX_CHUNKS_PER_CODE_FILE`` cap.
     """
-    prefix = _make_context_prefix(file_dict)
-    raw_chunks = chunk_text(file_dict["content"], chunk_size, overlap)
-    total = len(raw_chunks)
+    ext = (file_dict.get("extension") or "").lower()
 
-    ext = file_dict.get("extension", "")
+    skip_exts = _parse_ext_set(settings.SKIP_EXTENSIONS)
+    if ext in skip_exts:
+        return []
+
+    prefix = _make_context_prefix(file_dict)
     lang = LANGUAGE_MAP.get(ext, "code")
     is_doc = ext in {".md", ".txt", ".rst"}
+    branch = file_dict.get("branch", "")     # multi-branch ingest sets this
+
+    # ── Function-aware path for code ──
+    if settings.AST_CHUNKING_ENABLED and not is_doc:
+        try:
+            from backend.ingestion.code_chunker import function_aware_chunks
+            spans = function_aware_chunks(file_dict["content"], ext)
+        except Exception:
+            spans = None
+        if spans:
+            cap = max(1, settings.MAX_CHUNKS_PER_CODE_FILE)
+            spans = spans[:cap]
+            total = len(spans)
+            return [
+                {
+                    "text": prefix + s["text"],
+                    "source": file_dict["path"],
+                    "type": "code",
+                    "extension": ext,
+                    "language": lang,
+                    "branch": branch,
+                    "symbol": s.get("name", ""),
+                    "kind": s.get("kind", ""),
+                    "chunk_index": idx,
+                    "total_chunks": total,
+                    "file_size": file_dict.get("size", 0),
+                }
+                for idx, s in enumerate(spans)
+                if s.get("text", "").strip()
+            ]
+
+    # ── Word-count path ──
+    large_exts = _parse_ext_set(settings.LARGE_CHUNK_EXTENSIONS)
+    is_data = ext in large_exts
+    effective_chunk_size = settings.LARGE_CHUNK_SIZE if is_data else chunk_size
+
+    raw_chunks = chunk_text(file_dict["content"], effective_chunk_size, overlap)
+
+    cap = (settings.MAX_CHUNKS_PER_DATA_FILE if is_data
+           else settings.MAX_CHUNKS_PER_CODE_FILE)
+    cap = max(1, cap)
+    if len(raw_chunks) > cap:
+        raw_chunks = raw_chunks[:cap]
+    total = len(raw_chunks)
 
     return [
         {
-            "text": prefix + chunk,          # context-enriched chunk
+            "text": prefix + chunk,
             "source": file_dict["path"],
             "type": "documentation" if is_doc else "code",
             "extension": ext,
             "language": lang,
+            "branch": branch,
             "chunk_index": idx,
             "total_chunks": total,
             "file_size": file_dict.get("size", 0),

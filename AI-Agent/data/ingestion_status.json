@@ -80,23 +80,23 @@
     "ingested_branch": "master"
   },
   "n8n": {
-    "status": "embedding",
-    "updated_at": "2026-05-04T13:49:47.766944",
+    "status": "complete",
+    "updated_at": "2026-05-04T18:33:04.815210",
     "repo_url": "https://github.com/djeknet/n8n-master-workflows.git",
     "source": "remote_url",
-    "chunks_stored": 6392,
-    "files_processed": 1677,
-    "commits_processed": 151,
-    "branches_processed": 5,
-    "total_chunks": 6392,
-    "elapsed_seconds": 3044.7,
-    "ingested_branch": "main",
+    "chunks_stored": 7133,
+    "files_processed": 5315,
+    "commits_processed": 11,
+    "branches_processed": 1,
+    "total_chunks": 7133,
+    "elapsed_seconds": 4989.9,
+    "ingested_branch": "master",
     "ingested_by": "",
-    "chunks_processed": 5688,
-    "chunks_total": 24274,
-    "percent_complete": 23.4,
-    "embed_rate_per_sec": 2.69,
-    "eta_seconds": 6910
+    "chunks_processed": 7133,
+    "chunks_total": 7133,
+    "percent_complete": 100.0,
+    "embed_rate_per_sec": 1.43,
+    "eta_seconds": 0
   },
   "max-game": {
     "status": "complete",
@@ -165,5 +165,27 @@
     "repo_url": "https://github.com/RaveehaMohsin/Skill-Tracker",
     "source": "remote_url",
     "error": "404 Client Error: Not Found for url: https://api.github.com/repos/RaveehaMohsin/Skill-Tracker"
+  },
+  "cc": {
+    "status": "complete",
+    "updated_at": "2026-05-04T19:09:01.512453",
+    "repo_url": "https://github.com/RaveehaMohsin/CareerTrack-AI.git",
+    "source": "remote_url",
+    "ingested_by": "",
+    "chunks_processed": 316,
+    "chunks_total": 316,
+    "percent_complete": 100.0,
+    "embed_rate_per_sec": 6.73,
+    "eta_seconds": 0,
+    "chunks_stored": 316,
+    "files_processed": 151,
+    "commits_processed": 0,
+    "branches_processed": 7,
+    "branches_indexed": [
+      "master"
+    ],
+    "total_chunks": 316,
+    "elapsed_seconds": 79.3,
+    "ingested_branch": "master"
   }
 }

@@ -82,6 +82,7 @@ async def ingest_public_repo(
         repo_url=request.repo_url,
         repo_name=request.repo_name,
         branch=request.branch,
+        branches=request.branches,
         github_token=settings.GITHUB_API_TOKEN or None,   # server-level only
         ingested_by=(current_user.get("login", "") if current_user else ""),
         callback_url=request.callback_url or "",

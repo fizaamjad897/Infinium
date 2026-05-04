@@ -12,8 +12,10 @@ import time
 from datetime import datetime
 from typing import Optional
 
+import hashlib
 from backend.ingestion.github_loader import (
-    clone_repo, walk_files,
+    clone_repo, walk_files, walk_files_at_branch,
+    fetch_all_remote_branches, list_local_branch_names,
     extract_commits, extract_commit_diffs, extract_branches,
 )
 from backend.ingestion.chunker import (
@@ -25,6 +27,51 @@ from backend.config import settings
 
 _ingestion_status: dict[str, dict] = {}
 STATUS_FILE = os.path.join(settings.DATA_DIR, "ingestion_status.json")
+
+
+def _walk_files_multi_branch(repo_path: str, branches: list[str]) -> list[dict]:
+    """Walk files at each branch, dedupe by content hash so unchanged files
+    across branches are only embedded once.
+
+    Strategy:
+      - For every branch, checkout + walk → collect files
+      - Hash each file's content (sha1 of bytes)
+      - If we've seen the hash before, *append* the branch to that file's
+        ``branches`` list instead of duplicating the file
+      - Final files list includes ``branches`` (CSV string for ChromaDB
+        metadata compatibility) + first branch as ``branch``
+
+    For a 5-branch repo where 90% of files are identical across branches,
+    this is ~10× cheaper than naive per-branch indexing.
+    """
+    seen: dict[str, dict] = {}    # sha1(content) → file_dict
+    branch_file_counts: dict[str, int] = {}
+
+    for branch in branches:
+        files = walk_files_at_branch(repo_path, branch)
+        branch_file_counts[branch] = len(files)
+        print(f"   🌿 Branch '{branch}': {len(files)} files")
+        for f in files:
+            h = hashlib.sha1(f["content"].encode("utf-8", errors="ignore")).hexdigest()
+            if h in seen:
+                existing = seen[h]
+                if branch not in existing["branches_list"]:
+                    existing["branches_list"].append(branch)
+            else:
+                f["branches_list"] = [branch]
+                seen[h] = f
+
+    deduped: list[dict] = []
+    for h, f in seen.items():
+        # Pin "branch" to the first branch we saw it on (for back-compat),
+        # plus a CSV string of every branch it appears on.
+        f["branch"] = f["branches_list"][0]
+        f["branches"] = ",".join(f["branches_list"])
+        deduped.append(f)
+
+    print(f"   📁 Multi-branch dedup: {sum(branch_file_counts.values())} total file-reads → "
+          f"{len(deduped)} unique files (saved {sum(branch_file_counts.values()) - len(deduped)} duplicate embeds)")
+    return deduped
 
 
 def _post_callback(callback_url: str, payload: dict):
@@ -139,8 +186,17 @@ def ingest_repository(
     github_token: Optional[str] = None,
     ingested_by: str = "",
     callback_url: str = "",
+    branch: Optional[str] = None,
+    branches: Optional[list[str]] = None,
 ) -> dict:
-    """Full ingestion pipeline for a GitHub repository (cloned)."""
+    """Full ingestion pipeline for a GitHub repository (cloned).
+
+    Branch behaviour:
+      - ``branches=[...]`` → multi-branch: checkout each, walk files, dedupe
+        by content hash, every chunk tagged with its source branch
+      - ``branch="x"``     → single non-default branch checkout + index
+      - both omitted        → default branch (whatever HEAD points to after clone)
+    """
     print(f"\n🚀 Starting ingestion for: {repo_name} ({repo_url})")
     start_time = time.time()
     _update_status(repo_name, "cloning", repo_url=repo_url, ingested_by=ingested_by)
@@ -149,14 +205,25 @@ def ingest_repository(
         dest = os.path.join(settings.REPO_CACHE_DIR, repo_name.replace("/", "_"))
         path = clone_repo(repo_url, dest, github_token=github_token)
 
+        # Make sure all remote branches are available locally before checkout
+        if branches or branch:
+            print(f"   🌿 Fetching all remote branches…")
+            fetch_all_remote_branches(path)
+
         _update_status(repo_name, "scanning_files")
         print(f"   🔍 Scanning files...")
-        files = walk_files(path)
-        print(f"   📄 Found {len(files)} source files")
+
+        if branches:
+            files = _walk_files_multi_branch(path, branches)
+        elif branch:
+            files = walk_files_at_branch(path, branch)
+        else:
+            files = walk_files(path)
+        print(f"   📄 {len(files)} source files (after dedup if multi-branch)")
 
         _update_status(repo_name, "extracting_branches")
-        print(f"   🌿 Extracting branches...")
-        branches = extract_branches(path)
+        print(f"   🌿 Extracting branch metadata...")
+        branch_meta = extract_branches(path)
 
         _update_status(repo_name, "extracting_diffs")
         print(f"   📜 Extracting commit diffs (last {settings.MAX_COMMITS} commits)...")
@@ -169,14 +236,15 @@ def ingest_repository(
         _update_status(repo_name, "embedding")
         print(f"   🧮 Generating embeddings and storing...")
         collection = get_chroma_collection(repo_name)
-        stored, total = _chunk_and_store(files, commits_with_diffs, [], branches, repo_name, collection)
+        stored, total = _chunk_and_store(files, commits_with_diffs, [], branch_meta, repo_name, collection)
 
         elapsed = round(time.time() - start_time, 1)
         stats = {
             "chunks_stored": stored,
             "files_processed": len(files),
             "commits_processed": len(commits_with_diffs),
-            "branches_processed": len(branches),
+            "branches_processed": len(branch_meta),
+            "branches_indexed": branches or ([branch] if branch else []),
             "total_chunks": total,
             "elapsed_seconds": elapsed,
         }
@@ -197,26 +265,39 @@ def ingest_local_folder(
     repo_name: str,
     ingested_by: str = "",
     callback_url: str = "",
+    branch: Optional[str] = None,
+    branches: Optional[list[str]] = None,
 ) -> dict:
-    """Ingest a local folder — walks files + extracts git history if available."""
+    """Ingest a local folder — walks files + extracts git history if available.
+
+    If ``branches=[...]`` is supplied and the folder is a git repo, walks each
+    branch (with content-hash dedup) so chunks are tagged per branch.
+    """
     print(f"\n🚀 Starting local ingestion for: {repo_name} ({folder_path})")
     start_time = time.time()
 
     if not os.path.exists(folder_path):
         raise FileNotFoundError(f"Folder not found: {folder_path}")
 
+    is_git = os.path.exists(os.path.join(folder_path, ".git"))
+
     _update_status(repo_name, "scanning_files", folder_path=folder_path, ingested_by=ingested_by)
     print(f"   🔍 Scanning files...")
-    files = walk_files(folder_path)
+    if is_git and branches:
+        files = _walk_files_multi_branch(folder_path, branches)
+    elif is_git and branch:
+        files = walk_files_at_branch(folder_path, branch)
+    else:
+        files = walk_files(folder_path)
     print(f"   📄 Found {len(files)} source files")
 
-    commits_with_diffs = []
-    branches = []
+    commits_with_diffs: list[dict] = []
+    branch_meta: list[dict] = []
 
-    if os.path.exists(os.path.join(folder_path, ".git")):
+    if is_git:
         _update_status(repo_name, "extracting_branches")
         print(f"   🌿 Extracting branches...")
-        branches = extract_branches(folder_path)
+        branch_meta = extract_branches(folder_path)
 
         _update_status(repo_name, "extracting_diffs")
         print(f"   📜 Extracting commit diffs...")
@@ -229,14 +310,15 @@ def ingest_local_folder(
     _update_status(repo_name, "embedding")
     print(f"   🧮 Generating embeddings and storing...")
     collection = get_chroma_collection(repo_name)
-    stored, total = _chunk_and_store(files, commits_with_diffs, [], branches, repo_name, collection)
+    stored, total = _chunk_and_store(files, commits_with_diffs, [], branch_meta, repo_name, collection)
 
     elapsed = round(time.time() - start_time, 1)
     stats = {
         "chunks_stored": stored,
         "files_processed": len(files),
         "commits_processed": len(commits_with_diffs),
-        "branches_processed": len(branches),
+        "branches_processed": len(branch_meta),
+        "branches_indexed": branches or ([branch] if branch else []),
         "total_chunks": total,
         "elapsed_seconds": elapsed,
     }
@@ -253,6 +335,7 @@ def ingest_remote_url(
     github_token: Optional[str] = None,
     ingested_by: str = "",
     callback_url: str = "",
+    branches: Optional[list[str]] = None,
 ) -> dict:
     """Ingest a public GitHub repo via the GitHub API — no git clone needed.
 
@@ -272,27 +355,108 @@ def ingest_remote_url(
         owner, repo = _parse_repo_url(repo_url)
         info = fetch_repo_info(repo_url, github_token)
 
-        # User-supplied branch is a hint. Use the repo's actual default if not specified.
-        # If specified branch doesn't match default, we try user's choice first, then fall back.
         actual_default = info.get("default_branch", "main")
-        target_branch = branch if branch else actual_default
+        # Resolve which branches to fetch:
+        #   - branches=[...] → multi-branch via N tarballs
+        #   - branch="x"    → single branch
+        #   - else          → default branch
+        requested_branches: list[str] = list(branches) if branches else [branch or actual_default]
+        print(f"   ℹ️  {info['full_name']} — branches to index: {requested_branches} "
+              f"(default: {actual_default})")
 
-        print(f"   ℹ️  {info['full_name']} — branch: {target_branch} (default: {actual_default})")
+        # Resolve each requested branch to one that actually exists.
+        # If 'master' was requested but the repo's default is 'main', we
+        # remap to 'main' so the commits fetch (below) doesn't 404.
+        def _resolve_branch(name: str) -> Optional[str]:
+            from backend.ingestion.remote_loader import _headers, _resolve_token, GITHUB_API
+            token = _resolve_token(github_token)
+            try:
+                r = httpx.get(
+                    f"{GITHUB_API}/repos/{owner}/{repo}/branches/{name}",
+                    headers=_headers(token), timeout=8,
+                )
+                if r.status_code == 200:
+                    return name
+            except Exception:
+                pass
+            # Try the alternate default-branch convention
+            alt = "main" if name in {"master"} else ("master" if name == "main" else None)
+            if alt:
+                try:
+                    r = httpx.get(
+                        f"{GITHUB_API}/repos/{owner}/{repo}/branches/{alt}",
+                        headers=_headers(token), timeout=8,
+                    )
+                    if r.status_code == 200:
+                        print(f"   ↪︎ Branch '{name}' not found — using '{alt}' instead")
+                        return alt
+                except Exception:
+                    pass
+            # Fall back to the repo's actual default
+            if actual_default and actual_default != name:
+                print(f"   ↪︎ Branch '{name}' not found — falling back to default '{actual_default}'")
+                return actual_default
+            return None
+
+        import httpx
+        target_branches: list[str] = []
+        for b in requested_branches:
+            resolved = _resolve_branch(b)
+            if resolved and resolved not in target_branches:
+                target_branches.append(resolved)
+        if not target_branches:
+            target_branches = [actual_default]
 
         _update_status(repo_name, "fetching_files")
-        files = fetch_all_files(owner, repo, target_branch, github_token)
+        files: list[dict] = []
+        if len(target_branches) == 1:
+            # Single-branch: behaviour identical to before
+            files = fetch_all_files(owner, repo, target_branches[0], github_token)
+            for f in files:
+                f["branch"] = target_branches[0]
+        else:
+            # Multi-branch: one tarball per branch + content-hash dedup
+            seen_hash: dict[str, dict] = {}
+            for b in target_branches:
+                print(f"   🌿 Fetching tarball for branch '{b}'…")
+                try:
+                    branch_files = fetch_all_files(owner, repo, b, github_token)
+                except Exception as e:
+                    print(f"   ⚠️ Skipping branch '{b}': {e}")
+                    continue
+                for f in branch_files:
+                    h = hashlib.sha1(f["content"].encode("utf-8", errors="ignore")).hexdigest()
+                    if h in seen_hash:
+                        existing = seen_hash[h]
+                        if b not in existing["branches_list"]:
+                            existing["branches_list"].append(b)
+                    else:
+                        f["branches_list"] = [b]
+                        seen_hash[h] = f
+            for f in seen_hash.values():
+                f["branch"] = f["branches_list"][0]
+                f["branches"] = ",".join(f["branches_list"])
+                files.append(f)
+            print(f"   📁 Multi-branch dedup: {len(files)} unique files across {len(target_branches)} branches")
 
         _update_status(repo_name, "fetching_commits")
-        print(f"   📜 Fetching commit history...")
-        raw_commits = fetch_repo_commits(owner, repo, target_branch, settings.MAX_COMMITS, github_token)
-        print(f"   📜 Got {len(raw_commits)} commits")
+        print(f"   📜 Fetching commit history (per branch)...")
+        raw_commits: list[dict] = []
+        for b in target_branches:
+            try:
+                cs = fetch_repo_commits(owner, repo, b, settings.MAX_COMMITS, github_token)
+                for c in cs:
+                    c["branch"] = b
+                raw_commits.extend(cs)
+            except Exception as e:
+                print(f"   ⚠️ Could not fetch commits for {b}: {e}")
+        print(f"   📜 Got {len(raw_commits)} commits across {len(target_branches)} branches")
 
         _update_status(repo_name, "fetching_branches")
-        print(f"   🌿 Fetching branches...")
+        print(f"   🌿 Fetching branches metadata...")
         raw_branches = fetch_repo_branches(owner, repo, github_token)
-        # Mark default branch
         for b in raw_branches:
-            b["is_default"] = (b["name"] == target_branch)
+            b["is_default"] = (b["name"] == actual_default)
 
         _update_status(repo_name, "chunking")
         print(f"   ✂️ Chunking content...")
@@ -300,7 +464,6 @@ def ingest_remote_url(
         _update_status(repo_name, "embedding")
         print(f"   🧮 Generating embeddings and storing...")
         collection = get_chroma_collection(repo_name)
-        # Basic commits (no diffs from REST API list endpoint)
         stored, total = _chunk_and_store(files, [], raw_commits, raw_branches, repo_name, collection)
 
         elapsed = round(time.time() - start_time, 1)
@@ -309,10 +472,11 @@ def ingest_remote_url(
             "files_processed": len(files),
             "commits_processed": len(raw_commits),
             "branches_processed": len(raw_branches),
+            "branches_indexed": target_branches,
             "total_chunks": total,
             "elapsed_seconds": elapsed,
             "source": "remote_url",
-            "ingested_branch": target_branch,
+            "ingested_branch": target_branches[0] if len(target_branches) == 1 else "",
         }
         _update_status(repo_name, "complete", repo_url=repo_url, **stats)
         print(f"   ✅ Remote ingestion complete in {elapsed}s!")
