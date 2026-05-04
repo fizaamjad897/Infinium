@@ -65,24 +65,36 @@ curl http://localhost:8000/api/health
 
 | Endpoint | Method | Description |
 |---|---|---|
-| `/api/access/validate` | POST | Pre-flight check before adding a repo |
+| `/api/access/{public,private}` | POST | Pre-flight check before adding a repo |
 
 **Public repo (FR-003 — no auth needed):**
 ```bash
-curl -X POST http://localhost:8000/api/access/validate \
+curl -X POST http://localhost:8000/api/access/public \
   -H "Content-Type: application/json" \
   -d '{"repo_url":"https://github.com/tiangolo/fastapi"}'
 # → {"allowed":true,"is_public":true,"permission":"read",...}
+# Sending a private URL here returns 400 with a hint to use /api/access/private.
 ```
 
 **Private repo (FR-002):**
 ```bash
-curl -X POST http://localhost:8000/api/access/validate \
+curl -X POST http://localhost:8000/api/access/private \
   -H "Authorization: Bearer $JWT" \
   -H "Content-Type: application/json" \
   -d '{"repo_url":"https://github.com/your-org/private-repo"}'
 # → {"allowed":true,"private":true,"permission":"read"|"write"|"admin"}
-# OR {"allowed":false,"reason":"You do not have read access..."}
+
+# Or via the Node.js backend path:
+curl -X POST http://localhost:8000/api/access/private \
+  -H "X-GitHub-Token: ghp_..." \
+  -H "Content-Type: application/json" \
+  -d '{"repo_url":"https://github.com/your-org/private-repo"}'
+
+# Or with the token directly in the body (quick CLI testing):
+curl -X POST http://localhost:8000/api/access/private \
+  -H "Content-Type: application/json" \
+  -d '{"repo_url":"https://github.com/your-org/private-repo","github_token":"ghp_..."}'
+# Sending a public URL here returns 400 with a hint to use /api/access/public.
 ```
 
 ---
@@ -91,9 +103,9 @@ curl -X POST http://localhost:8000/api/access/validate \
 
 | Endpoint | Method | Description |
 |---|---|---|
-| `/api/ingest` | POST (auth) | Clone + index a GitHub repo |
+| `/api/ingest/private` | POST (auth) | Clone + index a **private** GitHub repo |
+| `/api/ingest/public` | POST | Index a **public** GitHub repo via REST API (no auth) |
 | `/api/ingest/local` | POST | Index a local folder (no clone) |
-| `/api/ingest/url` | POST | Index any public GitHub repo via REST API |
 | `/api/repos/{repo}/status` | GET | Live progress for a single repo |
 
 **Quickest test — index this very repo:**
@@ -107,11 +119,27 @@ watch -n 1 'curl -s http://localhost:8000/api/repos/infinium-self/status'
 # → status flows: scanning_files → extracting_branches → extracting_diffs → chunking → embedding → complete
 ```
 
-**Public repo via REST API (no clone):**
+**Public repo via REST API (no clone, no auth):**
 ```bash
-curl -X POST http://localhost:8000/api/ingest/url \
+curl -X POST http://localhost:8000/api/ingest/public \
   -H "Content-Type: application/json" \
   -d '{"repo_url":"https://github.com/tiangolo/fastapi","repo_name":"fastapi"}'
+```
+
+**Private repo (clone, auth required):**
+```bash
+# Using JWT (browser/IDE flow):
+curl -X POST http://localhost:8000/api/ingest/private \
+  -H "Authorization: Bearer $JWT" \
+  -H "Content-Type: application/json" \
+  -d '{"repo_url":"https://github.com/your-org/private-repo","repo_name":"private"}'
+
+# Using X-GitHub-Token header (Node.js backend flow):
+curl -X POST http://localhost:8000/api/ingest/private \
+  -H "X-GitHub-Token: ghp_..." \
+  -H "X-User-Login: fizaamjad897" \
+  -H "Content-Type: application/json" \
+  -d '{"repo_url":"https://github.com/your-org/private-repo","repo_name":"private"}'
 ```
 
 ---
@@ -384,8 +412,9 @@ curl -X POST http://localhost:8000/api/docs/summarize/smoke-test | jq .draft
 | FR | Module | Endpoint(s) | Auth |
 |---|---|---|---|
 | FR-001 | `auth/github_oauth.py` | `/api/auth/github`, `/api/auth/github/callback`, `/api/auth/me`, `/api/auth/logout`, `/api/auth/github/repos` | OAuth → JWT |
-| FR-002 / FR-003 | `routes/access.py` | `/api/access/validate` | optional JWT |
-| FR-004 | `routes/ingest.py`, `routes/remote.py` | `/api/ingest`, `/api/ingest/local`, `/api/ingest/url` | mixed |
+| FR-002 | `routes/access.py` | `/api/access/private` | JWT or X-GitHub-Token |
+| FR-003 | `routes/access.py` | `/api/access/public` | none |
+| FR-004 | `routes/ingest.py`, `routes/remote.py` | `/api/ingest/private` (auth), `/api/ingest/public` (none), `/api/ingest/local` | mixed |
 | FR-005 | `routes/ingest.py` | `/api/webhook/github` | HMAC sig |
 | FR-006 / FR-007 | `routes/query.py`, `routes/git_history.py` | `/api/query`, `/api/query/all`, `/api/query/git`, `/api/conversation/*` | none |
 | FR-008 | `routes/query.py` | `/api/query/feedback`, `/api/query/feedback/stats` | optional JWT |

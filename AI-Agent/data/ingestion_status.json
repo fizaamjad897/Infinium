@@ -81,7 +81,7 @@
   },
   "n8n": {
     "status": "embedding",
-    "updated_at": "2026-05-04T13:47:04.267975",
+    "updated_at": "2026-05-04T13:49:47.766944",
     "repo_url": "https://github.com/djeknet/n8n-master-workflows.git",
     "source": "remote_url",
     "chunks_stored": 6392,
@@ -92,11 +92,11 @@
     "elapsed_seconds": 3044.7,
     "ingested_branch": "main",
     "ingested_by": "",
-    "chunks_processed": 5232,
+    "chunks_processed": 5688,
     "chunks_total": 24274,
-    "percent_complete": 21.6,
-    "embed_rate_per_sec": 2.68,
-    "eta_seconds": 7102
+    "percent_complete": 23.4,
+    "embed_rate_per_sec": 2.69,
+    "eta_seconds": 6910
   },
   "max-game": {
     "status": "complete",

@@ -10,20 +10,22 @@ Infinium/
 │   ├── backend/
 │   │   ├── api/main.py          app factory + health
 │   │   ├── api/routes/          one router per concern (modular endpoints)
-│   │   │   ├── ingest.py        FR-004, FR-005
-│   │   │   ├── remote.py        FR-003 (REST-API ingest, no clone)
-│   │   │   ├── access.py        FR-002, FR-003 (pre-flight access check)
+│   │   │   ├── ingest.py        FR-004 private + local + webhook (FR-005)
+│   │   │   ├── remote.py        FR-003 public ingest (REST-API, no clone)
+│   │   │   ├── access.py        FR-002 (/private) + FR-003 (/public) — strict split
 │   │   │   ├── query.py         FR-006, FR-007, FR-008
 │   │   │   ├── git_history.py   git-aware queries
 │   │   │   ├── repos.py         FR-013
 │   │   │   ├── dashboard.py     FR-011 (per-user analytics)
 │   │   │   ├── ide.py           FR-009 (VSCode extension API)
 │   │   │   ├── slack.py         FR-010 (slash command + events)
-│   │   │   └── docs.py          FR-012 (auto-doc summariser)
+│   │   │   ├── docs.py          FR-012 (auto-doc summariser)
+│   │   │   └── code.py          symbol-find / rewrite / cross-repo / explain
 │   │   ├── auth/                FR-001 (GitHub OAuth + JWT)
 │   │   ├── ingestion/           clone/load/chunk/embed pipeline
 │   │   ├── rag/                 retriever, generator, conversation
 │   │   ├── analytics/           query history (powers FR-011 + FR-012)
+│   │   ├── code_search/         symbol finder + LLM rewriter/explainer
 │   │   └── feedback/            FR-008 store
 │   └── chroma_db/               vector index (persistent)
 ├── vscode-extension/            FR-009 client (TypeScript)
@@ -47,6 +49,20 @@ Infinium/
 | FR-011 Personal dashboard | ✅ | `routes/dashboard.py` + `analytics/query_history.py` |
 | FR-012 Auto doc summariser | ✅ | `routes/docs.py` |
 | FR-013 Repo management | ✅ | `routes/repos.py` |
+
+## Code-aware capabilities (cross-cutting)
+
+These span FR-006/FR-007/FR-009 and address the project's differentiator goals:
+
+| Capability | Endpoint | Module |
+|---|---|---|
+| Find function/class by name | `POST /api/code/find` | `code_search/symbol_finder.py` |
+| Find call-sites of a symbol | `POST /api/code/callers` | same |
+| Rewrite snippet (repo-grounded) | `POST /api/code/rewrite` | `code_search/rewriter.py` |
+| Explain snippet (repo-grounded) | `POST /api/code/explain` | same |
+| Cross-repo comparison query | `POST /api/code/cross-repo` | `routes/code.py` |
+| Branch diff (data only, no LLM) | `GET /api/repos/{repo}/branches/diff?base=&head=` | `routes/git_history.py` |
+| Cross-branch reasoning query | `POST /api/query/cross-branch` | same |
 
 ## Non-functional notes
 
