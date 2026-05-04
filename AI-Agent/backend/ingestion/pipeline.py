@@ -27,6 +27,18 @@ _ingestion_status: dict[str, dict] = {}
 STATUS_FILE = os.path.join(settings.DATA_DIR, "ingestion_status.json")
 
 
+def _post_callback(callback_url: str, payload: dict):
+    """Fire-and-forget POST to a user-supplied callback URL when ingestion finishes."""
+    if not callback_url:
+        return
+    try:
+        import requests
+        requests.post(callback_url, json=payload, timeout=10)
+        print(f"   📨 Notified callback: {callback_url}")
+    except Exception as e:
+        print(f"   ⚠️ Callback POST failed ({callback_url}): {e}")
+
+
 def _load_status():
     global _ingestion_status
     if os.path.exists(STATUS_FILE):
@@ -95,14 +107,30 @@ def _chunk_and_store(files, commits_with_diffs, commits_basic, branches, repo_na
     for b in branches:
         all_chunks.append(chunk_branch(b))
 
-    print(f"   📦 Total chunks: {len(all_chunks)} "
+    total_chunks = len(all_chunks)
+    print(f"   📦 Total chunks: {total_chunks} "
           f"(files: {sum(1 for c in all_chunks if c['type'] in ('code', 'documentation'))}, "
           f"diffs: {sum(1 for c in all_chunks if c['type'] == 'commit_diff')}, "
           f"commits: {sum(1 for c in all_chunks if c['type'] == 'commit')}, "
           f"branches: {sum(1 for c in all_chunks if c['type'] == 'branch')})")
 
-    stored = embed_and_store(all_chunks, collection, repo_name=repo_name)
-    return stored, len(all_chunks)
+    embed_started_at = time.time()
+
+    def _on_progress(done: int, total: int):
+        elapsed = time.time() - embed_started_at
+        rate = done / elapsed if elapsed > 0 else 0
+        remaining = (total - done) / rate if rate > 0 else 0
+        _update_status(
+            repo_name, "embedding",
+            chunks_processed=done,
+            chunks_total=total,
+            percent_complete=round(100 * done / total, 1) if total else 0,
+            embed_rate_per_sec=round(rate, 2),
+            eta_seconds=int(remaining),
+        )
+
+    stored = embed_and_store(all_chunks, collection, repo_name=repo_name, progress_callback=_on_progress)
+    return stored, total_chunks
 
 
 def ingest_repository(
@@ -110,6 +138,7 @@ def ingest_repository(
     repo_name: str,
     github_token: Optional[str] = None,
     ingested_by: str = "",
+    callback_url: str = "",
 ) -> dict:
     """Full ingestion pipeline for a GitHub repository (cloned)."""
     print(f"\n🚀 Starting ingestion for: {repo_name} ({repo_url})")
@@ -153,11 +182,13 @@ def ingest_repository(
         }
         _update_status(repo_name, "complete", repo_url=repo_url, **stats)
         print(f"   ✅ Ingestion complete in {elapsed}s!")
+        _post_callback(callback_url, {"status": "complete", "repo_name": repo_name, **stats})
         return stats
 
     except Exception as e:
         _update_status(repo_name, "error", error=str(e))
         print(f"   ❌ Ingestion failed: {e}")
+        _post_callback(callback_url, {"status": "error", "repo_name": repo_name, "error": str(e)})
         raise
 
 
@@ -165,6 +196,7 @@ def ingest_local_folder(
     folder_path: str,
     repo_name: str,
     ingested_by: str = "",
+    callback_url: str = "",
 ) -> dict:
     """Ingest a local folder — walks files + extracts git history if available."""
     print(f"\n🚀 Starting local ingestion for: {repo_name} ({folder_path})")
@@ -210,6 +242,7 @@ def ingest_local_folder(
     }
     _update_status(repo_name, "complete", folder_path=folder_path, **stats)
     print(f"   ✅ Ingestion complete in {elapsed}s!")
+    _post_callback(callback_url, {"status": "complete", "repo_name": repo_name, **stats})
     return stats
 
 
@@ -219,6 +252,7 @@ def ingest_remote_url(
     branch: Optional[str] = None,
     github_token: Optional[str] = None,
     ingested_by: str = "",
+    callback_url: str = "",
 ) -> dict:
     """Ingest a public GitHub repo via the GitHub API — no git clone needed.
 
@@ -282,11 +316,13 @@ def ingest_remote_url(
         }
         _update_status(repo_name, "complete", repo_url=repo_url, **stats)
         print(f"   ✅ Remote ingestion complete in {elapsed}s!")
+        _post_callback(callback_url, {"status": "complete", "repo_name": repo_name, **stats})
         return stats
 
     except Exception as e:
         _update_status(repo_name, "error", error=str(e))
         print(f"   ❌ Remote ingestion failed: {e}")
+        _post_callback(callback_url, {"status": "error", "repo_name": repo_name, "error": str(e)})
         raise
 
 

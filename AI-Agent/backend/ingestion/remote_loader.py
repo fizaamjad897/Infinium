@@ -1,14 +1,20 @@
 """
-Remote Loader — Fetches public GitHub repos via the GitHub Contents API.
-No git clone required. Works for any public repo instantly.
-For private repos or higher rate limits, pass a github_token.
+Remote Loader — Fetches public GitHub repos via the GitHub API.
 
-Rate limits:
-  - Unauthenticated: 60 req/hour
-  - With token: 5000 req/hour
+Primary strategy: **tarball download** (one HTTP call, no secondary rate
+limits). Falls back to per-file Contents API only when the tarball fails.
+
+Rate-limit notes:
+  - Anonymous primary: 60 req/hr
+  - Token primary:     5000 req/hr
+  - Secondary limit:   triggered by many concurrent requests on the same
+    endpoint (e.g. /contents/{path}). Returns 403 — NOT solved by the PAT.
+    Tarball avoids this entirely.
 """
 from __future__ import annotations
 import base64
+import io
+import tarfile
 import time
 from typing import Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -128,33 +134,164 @@ def fetch_repo_tree(
     return files
 
 
+def _sleep_for_rate_limit(resp: requests.Response, attempt: int) -> float:
+    """Read GitHub's rate-limit hints and return how long to back off.
+
+    Honors Retry-After (seconds) and X-RateLimit-Reset (epoch) headers.
+    Falls back to exponential backoff (2, 4, 8, 16 s) if no header is present.
+    """
+    retry_after = resp.headers.get("Retry-After")
+    if retry_after:
+        try:
+            return float(retry_after)
+        except ValueError:
+            pass
+    reset = resp.headers.get("X-RateLimit-Reset")
+    if reset:
+        try:
+            now = time.time()
+            wait = max(0, float(reset) - now)
+            return min(wait, 60)   # cap at 60 s per attempt
+        except ValueError:
+            pass
+    return min(2 ** attempt, 60)   # 2, 4, 8, 16, … capped at 60
+
+
 def fetch_file_content(
     owner: str,
     repo: str,
     path: str,
     github_token: Optional[str] = None,
+    max_attempts: int = 4,
 ) -> Optional[dict]:
-    """Fetch a single file's content via the Contents API."""
+    """Fetch a single file's content via the Contents API.
+
+    Honors GitHub's secondary-rate-limit signals (403 + Retry-After /
+    X-RateLimit-Reset) with bounded exponential backoff. Used only as
+    a fallback — primary path is the tarball.
+    """
     token = _resolve_token(github_token)
-    try:
-        resp = requests.get(
-            f"{GITHUB_API}/repos/{owner}/{repo}/contents/{path}",
-            headers=_headers(token),
-            timeout=20,
-        )
+    url = f"{GITHUB_API}/repos/{owner}/{repo}/contents/{path}"
+
+    for attempt in range(max_attempts):
+        try:
+            resp = requests.get(url, headers=_headers(token), timeout=20)
+        except Exception as e:
+            print(f"   ⚠️ Network error fetching {path}: {e}")
+            return None
+
         if resp.status_code == 404:
             return None
-        resp.raise_for_status()
-        data = resp.json()
-        encoded = data.get("content", "")
-        content = base64.b64decode(encoded).decode("utf-8", errors="ignore")
+        if resp.status_code in (403, 429):
+            wait = _sleep_for_rate_limit(resp, attempt)
+            print(f"   ⏳ Rate-limited on {path} — sleeping {wait:.1f}s (attempt {attempt+1}/{max_attempts})")
+            time.sleep(wait)
+            continue
+        if resp.status_code != 200:
+            print(f"   ⚠️ {path} returned {resp.status_code}")
+            return None
+
+        try:
+            data = resp.json()
+            encoded = data.get("content", "")
+            content = base64.b64decode(encoded).decode("utf-8", errors="ignore")
+        except Exception as e:
+            print(f"   ⚠️ Decode error on {path}: {e}")
+            return None
         if not content.strip():
             return None
         ext = "." + path.rsplit(".", 1)[-1].lower() if "." in path else ""
         return {"path": path, "content": content, "extension": ext, "size": len(content)}
-    except Exception as e:
-        print(f"   ⚠️ Failed to fetch {path}: {e}")
-        return None
+
+    print(f"   ⚠️ Gave up on {path} after {max_attempts} rate-limited attempts")
+    return None
+
+
+def fetch_via_tarball(
+    owner: str,
+    repo: str,
+    ref: str,
+    github_token: Optional[str] = None,
+) -> list[dict]:
+    """Download the repo as a tar.gz at ``ref`` (branch / tag / sha) — one API call.
+
+    Tarball downloads do **not** count against the secondary rate limit and
+    are dramatically faster for large repos (one round-trip vs. thousands).
+    GitHub serves tarballs from a CDN; expect ~10 MB/s on a decent connection.
+    """
+    token = _resolve_token(github_token)
+    url = f"{GITHUB_API}/repos/{owner}/{repo}/tarball/{ref}"
+    print(f"   📦 Downloading tarball: {owner}/{repo}@{ref} …")
+    started = time.time()
+
+    # Bounded retry on transient errors / rate-limit on the tarball endpoint itself
+    last_exc: Optional[Exception] = None
+    for attempt in range(3):
+        try:
+            resp = requests.get(url, headers=_headers(token), timeout=300, stream=True)
+            if resp.status_code in (403, 429):
+                wait = _sleep_for_rate_limit(resp, attempt)
+                print(f"   ⏳ Tarball rate-limited — sleeping {wait:.1f}s")
+                time.sleep(wait)
+                continue
+            resp.raise_for_status()
+            tarball_bytes = resp.content     # whole archive into memory
+            break
+        except Exception as e:
+            last_exc = e
+            time.sleep(2 ** attempt)
+    else:
+        raise RuntimeError(f"Tarball download failed after retries: {last_exc}")
+
+    size_mb = len(tarball_bytes) / 1_000_000
+    print(f"   📦 Got {size_mb:.1f} MB in {time.time()-started:.1f}s — extracting…")
+
+    files: list[dict] = []
+    skipped_too_big = 0
+    skipped_unsupported = 0
+
+    with tarfile.open(fileobj=io.BytesIO(tarball_bytes), mode="r:gz") as tar:
+        for member in tar:
+            if not member.isfile():
+                continue
+            # Tarball wraps everything in a top-level "{owner}-{repo}-{sha}/" dir — strip it
+            name = member.name
+            if "/" in name:
+                name = name.split("/", 1)[1]
+            else:
+                continue
+            if not name:
+                continue
+
+            ext = "." + name.rsplit(".", 1)[-1].lower() if "." in name else ""
+            if ext not in SUPPORTED_EXTENSIONS:
+                skipped_unsupported += 1
+                continue
+            if member.size > MAX_FILE_SIZE_BYTES:
+                skipped_too_big += 1
+                continue
+
+            try:
+                fh = tar.extractfile(member)
+                if fh is None:
+                    continue
+                content = fh.read().decode("utf-8", errors="ignore")
+            except Exception as e:
+                print(f"   ⚠️ Could not read {name}: {e}")
+                continue
+            if not content.strip():
+                continue
+
+            files.append({
+                "path": name,
+                "content": content,
+                "extension": ext,
+                "size": len(content),
+            })
+
+    print(f"   ✅ Extracted {len(files)} files "
+          f"(skipped {skipped_unsupported} unsupported, {skipped_too_big} oversized)")
+    return files
 
 
 def fetch_all_files(
@@ -164,23 +301,49 @@ def fetch_all_files(
     github_token: Optional[str] = None,
     max_workers: int = 4,
 ) -> list[dict]:
-    """Fetch all supported source files. Auto-retries master<->main on 404."""
-    token = _resolve_token(github_token)
-    print(f"   🌐 Fetching file tree from {owner}/{repo}@{branch}...")
+    """Fetch every supported source file in a repo branch.
 
+    Strategy:
+      1. **Tarball** (default) — one HTTP call, no secondary rate limits.
+         Handles repos of any size in one shot.
+      2. **Per-file Contents API** (fallback) — only used if tarball fails
+         (e.g. ref doesn't exist). Has 403/Retry-After backoff.
+
+    Auto-retries main↔master if the requested branch returns 404.
+    """
+    token = _resolve_token(github_token)
+
+    # Try tarball first
+    try:
+        return fetch_via_tarball(owner, repo, branch, token)
+    except Exception as e:
+        msg = str(e)
+        # Fall back to alternate default branch on 404
+        if "404" in msg:
+            fallback = "master" if branch != "master" else "main"
+            print(f"   ⚠️ Tarball: branch '{branch}' not found — retrying with '{fallback}' …")
+            try:
+                return fetch_via_tarball(owner, repo, fallback, token)
+            except Exception as e2:
+                print(f"   ⚠️ Tarball fallback also failed: {e2}")
+        else:
+            print(f"   ⚠️ Tarball fetch failed: {e}")
+
+    # ── Per-file fallback (slow path) ──
+    print(f"   🌐 Falling back to per-file Contents API (slower) …")
     try:
         tree = fetch_repo_tree(owner, repo, branch, token)
     except Exception as e:
         if "404" in str(e):
             fallback = "master" if branch != "master" else "main"
-            print(f"   ⚠️ Branch '{branch}' not found — retrying with '{fallback}'...")
             tree = fetch_repo_tree(owner, repo, fallback, token)
         else:
             raise
 
-    print(f"   📄 Found {len(tree)} supported files to fetch")
+    print(f"   📄 Found {len(tree)} supported files to fetch individually")
     files = []
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+    # Lower concurrency on the slow path to stay below the secondary limit
+    with ThreadPoolExecutor(max_workers=min(max_workers, 2)) as executor:
         futures = {
             executor.submit(fetch_file_content, owner, repo, item["path"], token): item
             for item in tree
@@ -189,8 +352,8 @@ def fetch_all_files(
             result = future.result()
             if result:
                 files.append(result)
-            time.sleep(0.05)
-    print(f"   ✅ Successfully fetched {len(files)}/{len(tree)} files")
+            time.sleep(0.1)
+    print(f"   ✅ Fetched {len(files)}/{len(tree)} files via Contents API")
     return files
 
 

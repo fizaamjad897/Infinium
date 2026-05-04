@@ -2,11 +2,14 @@
 Git History API Routes
 Exposes indexed git data directly — branches, commits, and dedicated git reasoning queries.
 
-GET  /api/repos/{repo_name}/branches   → list all indexed branches with metadata
-GET  /api/repos/{repo_name}/commits    → list indexed commits (filterable by branch)
-POST /api/query/git                    → RAG query scoped to git history only
+GET  /api/repos/{repo_name}/branches               → list all indexed branches with metadata
+GET  /api/repos/{repo_name}/commits                → list indexed commits (filterable by branch)
+GET  /api/repos/{repo_name}/branches/diff          → commit diff between two branches
+POST /api/query/git                                → RAG query scoped to git history only
+POST /api/query/cross-branch                       → reason across multiple branches of one repo
 """
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel, Field
 from typing import Optional
 
 from backend.api.models import (
@@ -179,4 +182,172 @@ def query_git_history(req: GitQueryRequest):
         chunk_types=chunk_types,
         branch_filter=req.branch_filter,
     )
+    return result
+
+
+# ── Branch comparison (diff between two branches) ──
+
+@router.get("/repos/{repo_name}/branches/diff")
+def diff_branches(
+    repo_name: str,
+    base: str = Query(..., description="Base branch to compare from (e.g. 'main')"),
+    head: str = Query(..., description="Head branch to compare to (e.g. 'feature-auth')"),
+    limit: int = Query(100, ge=1, le=500, description="Max commits to inspect per branch"),
+):
+    """Compute the differences between two branches using indexed commit data.
+
+    Returns:
+      - ``commits_only_in_base``  — commits on base not on head
+      - ``commits_only_in_head``  — commits on head not on base (the "PR" set)
+      - ``files_changed_on_head`` — union of files touched on head-only commits
+      - ``authors_on_head``       — distinct authors of head-only commits
+
+    All results are derived from already-indexed chunks — no extra git ops.
+    """
+    base_chunks = _get_git_chunks(repo_name, "commit", branch_filter=base)
+    head_chunks = _get_git_chunks(repo_name, "commit", branch_filter=head)
+    if not base_chunks and not head_chunks:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No commit data for {repo_name}@{base} or {repo_name}@{head}. Re-ingest required."
+        )
+
+    def _index(chunks):
+        seen: dict = {}
+        for c in chunks[:limit]:
+            sha = c["meta"].get("sha", "")
+            if sha and sha not in seen:
+                seen[sha] = c["meta"]
+        return seen
+
+    base_idx = _index(base_chunks)
+    head_idx = _index(head_chunks)
+
+    only_base = [v for sha, v in base_idx.items() if sha not in head_idx]
+    only_head = [v for sha, v in head_idx.items() if sha not in base_idx]
+
+    files_on_head: set[str] = set()
+    authors_on_head: set[str] = set()
+    for m in only_head:
+        authors_on_head.add(m.get("author", ""))
+        files = m.get("files_changed", "")
+        if isinstance(files, str):
+            files = [f.strip() for f in files.split(",") if f.strip()]
+        files_on_head.update(files)
+
+    return {
+        "repo_name": repo_name,
+        "base_branch": base,
+        "head_branch": head,
+        "commits_only_in_base": [
+            {"sha": m.get("sha", ""), "author": m.get("author", ""),
+             "date": m.get("date", ""), "message": m.get("message", "")}
+            for m in only_base
+        ],
+        "commits_only_in_head": [
+            {"sha": m.get("sha", ""), "author": m.get("author", ""),
+             "date": m.get("date", ""), "message": m.get("message", "")}
+            for m in only_head
+        ],
+        "files_changed_on_head": sorted(files_on_head),
+        "authors_on_head": sorted(a for a in authors_on_head if a),
+        "summary": (
+            f"{len(only_head)} commits ahead, {len(only_base)} behind base — "
+            f"{len(files_on_head)} files touched on '{head}'"
+        ),
+    }
+
+
+# ── Cross-branch reasoning query ──
+
+class CrossBranchRequest(BaseModel):
+    query: str = Field(..., description="Question to answer across branches")
+    repo_name: str = Field(..., description="Repository to query")
+    branches: list[str] = Field(..., min_length=2, description="Two or more branches to reason across")
+    include_diffs: bool = Field(True)
+    include_commits: bool = Field(True)
+    include_branches: bool = Field(True)
+    use_dual_model: Optional[bool] = Field(False)
+    top_k: Optional[int] = Field(None)
+
+
+@router.post("/query/cross-branch")
+def query_cross_branch(req: CrossBranchRequest):
+    """Reason across multiple branches of a single repo.
+
+    Runs the git query once per branch (so each branch contributes context),
+    aggregates the chunks, and asks the LLM to compare/contrast.
+
+    Example:
+      ``{"query":"What features differ between branches?",
+         "repo_name":"my-repo","branches":["main","feature-auth","experimental"]}``
+    """
+    from backend.rag.query_engine import ask
+    from backend.rag.retriever import hybrid_retrieve
+    from backend.rag.generator import generate_response
+    from backend.rag.reasoning import ReasoningTrace
+
+    chunk_types = []
+    if req.include_diffs:
+        chunk_types.append("commit_diff")
+    if req.include_commits:
+        chunk_types.append("commit")
+    if req.include_branches:
+        chunk_types.append("branch")
+    if not chunk_types:
+        chunk_types = ["commit_diff", "commit", "branch"]
+
+    trace = ReasoningTrace()
+    trace.start(req.query)
+
+    # Pull chunks per branch and tag each with the branch name so the LLM can attribute
+    aggregated: list[dict] = []
+    per_branch_counts: dict[str, int] = {}
+    for branch in req.branches:
+        try:
+            chunks = hybrid_retrieve(
+                req.query, req.repo_name,
+                top_k=(req.top_k or 5),
+                chunk_types=chunk_types,
+                branch_filter=branch,
+            )
+            for c in chunks:
+                c["text"] = f"[branch: {branch}] " + c["text"]
+                c["branch"] = branch
+            per_branch_counts[branch] = len(chunks)
+            aggregated.extend(chunks)
+        except Exception as e:
+            print(f"   ⚠️ Cross-branch fetch failed for {branch}: {e}")
+            per_branch_counts[branch] = 0
+
+    if not aggregated:
+        trace.finish()
+        return {
+            "answer": (
+                f"No relevant context found on any of these branches: "
+                f"{', '.join(req.branches)}. Confirm they were indexed."
+            ),
+            "sources": [],
+            "branches_searched": req.branches,
+            "chunks_per_branch": per_branch_counts,
+            "model": "",
+            "tokens_used": 0,
+        }
+
+    framed = (
+        f"Compare and contrast the following branches of '{req.repo_name}': "
+        f"{', '.join(req.branches)}. For each branch, answer the user's "
+        f"question using ONLY the chunks tagged with that branch's name "
+        f"in the context. Then summarise the differences. "
+        f"Question: {req.query}"
+    )
+
+    result = generate_response(
+        framed, aggregated,
+        use_dual_model=req.use_dual_model,
+        trace=trace,
+    )
+    result["branches_searched"] = req.branches
+    result["chunks_per_branch"] = per_branch_counts
+    result["chunks_retrieved"] = len(aggregated)
     return result

@@ -40,6 +40,7 @@ from backend.api.routes.dashboard import router as dashboard_router
 from backend.api.routes.ide import router as ide_router
 from backend.api.routes.slack import router as slack_router
 from backend.api.routes.docs import router as docs_router
+from backend.api.routes.code import router as code_router
 
 app.include_router(auth_router)
 app.include_router(ingest_router)
@@ -52,6 +53,7 @@ app.include_router(dashboard_router)
 app.include_router(ide_router)
 app.include_router(slack_router)
 app.include_router(docs_router)
+app.include_router(code_router)
 
 
 # ── Startup Event ──

@@ -40,6 +40,16 @@ class Settings(BaseSettings):
     RAG_TOP_K: int = 5               # Fewer chunks → smaller prompt → faster LLM
     RELEVANCE_THRESHOLD: float = 0.40  # Higher threshold filters weak matches
 
+    # ── Embedding throughput ──
+    # We batch many texts into a single Ollama /api/embed call (the newer
+    # batch endpoint), then run several batches in parallel.
+    EMBED_BATCH_SIZE: int = 8          # texts per Ollama HTTP call. 4-16 are safe; some
+                                       # Ollama versions reject >100 KB request bodies.
+    EMBED_WORKERS: int = 6             # concurrent /api/embed calls
+    EMBED_PROGRESS_EVERY: int = 50     # status update every N chunks during embedding
+    # Set to true to skip the batch endpoint and go straight to per-text.
+    DISABLE_BATCH_EMBED: bool = False
+
     # ── Conversation ──
     MAX_CONVERSATION_TURNS: int = 10
     CONVERSATION_TTL_HOURS: int = 24

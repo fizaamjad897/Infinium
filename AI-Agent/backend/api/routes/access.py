@@ -1,19 +1,21 @@
 """
-Repository Access Validation Routes (FR-002, FR-003)
+Repository Access Validation Routes (FR-002 / FR-003)
 
-POST /api/access/validate
-    - Verify user has at least read access to a repository before adding.
-    - Public repos pass automatically (FR-003).
-    - Private repos: query GitHub /repos/{owner}/{repo} with user's stored token (FR-002).
+Two strictly-separated endpoints — pick the one that matches your repo type.
+Each one rejects the other category with a clear redirect hint, so callers
+never accidentally hit the wrong path.
+
+  POST /api/access/public   → public-repo validation, no auth (FR-003)
+  POST /api/access/private  → private-repo validation, auth required (FR-002)
 """
 from __future__ import annotations
 import re
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Header
 from pydantic import BaseModel, Field
 from typing import Optional
 
-from backend.auth.jwt_handler import get_current_user
+from backend.auth.jwt_handler import get_current_user, get_current_user_optional
 from backend.auth.models import UserStore
 from backend.config import settings
 
@@ -21,18 +23,24 @@ router = APIRouter(prefix="/api/access", tags=["Access Control"])
 user_store = UserStore()
 
 
-class AccessValidationRequest(BaseModel):
-    repo_url: str = Field(..., description="GitHub repository URL")
+# ── Models ──
+
+class PublicAccessRequest(BaseModel):
+    repo_url: str = Field(..., description="Public GitHub repository URL")
+
+
+class PrivateAccessRequest(BaseModel):
+    repo_url: str = Field(..., description="Private GitHub repository URL")
     github_token: Optional[str] = Field(
         None,
         description=(
-            "Optional GitHub PAT. If omitted, the authenticated user's stored "
-            "OAuth token is used."
+            "Optional override token. If omitted, the resolution order is: "
+            "X-GitHub-Token header → JWT'd user's stored OAuth token → 401."
         ),
     )
 
 
-class AccessValidationResponse(BaseModel):
+class AccessResponse(BaseModel):
     allowed: bool
     is_public: bool
     repo_full_name: str = ""
@@ -41,6 +49,8 @@ class AccessValidationResponse(BaseModel):
     private: bool = False
     reason: str = ""
 
+
+# ── Helpers ──
 
 _GITHUB_URL_RE = re.compile(
     r"^https?://github\.com/([^/]+)/([^/]+?)(?:\.git)?/?$"
@@ -57,76 +67,143 @@ def _parse(repo_url: str) -> tuple[str, str]:
     return m.group(1), m.group(2)
 
 
-@router.post("/validate", response_model=AccessValidationResponse)
-async def validate_access(
-    req: AccessValidationRequest,
-    current_user: Optional[dict] = Depends(get_current_user),
-):
-    """Pre-flight check before ingesting a repo.
-
-    - Public repos return ``allowed=True, is_public=True`` without needing a token.
-    - Private repos require either ``github_token`` in the request OR a logged-in
-      user whose stored OAuth token has access.
-    """
-    owner, repo = _parse(req.repo_url)
-
-    # Resolve token: explicit param wins, then user's stored OAuth token,
-    # then the server-level GITHUB_API_TOKEN as a last resort.
-    token = req.github_token
-    if not token and current_user:
-        user = user_store.get_user(current_user["github_id"])
-        token = user.get("access_token") if user else None
-    if not token:
-        token = settings.GITHUB_API_TOKEN or None
-
+async def _fetch_repo_info(owner: str, repo: str, token: Optional[str]) -> tuple[int, dict]:
     headers = {"Accept": "application/vnd.github+json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
-
     api_url = f"https://api.github.com/repos/{owner}/{repo}"
     async with httpx.AsyncClient() as client:
         resp = await client.get(api_url, headers=headers, timeout=10)
+    try:
+        body = resp.json()
+    except Exception:
+        body = {}
+    return resp.status_code, body
 
-    if resp.status_code == 404:
-        # Could be private + no access, or genuinely missing.
-        return AccessValidationResponse(
-            allowed=False,
-            is_public=False,
-            reason=(
-                "Repository not found or you do not have access. "
-                "If it is private, please log in with GitHub OAuth."
+
+# ── Public-only endpoint (FR-003) ──
+
+@router.post("/public", response_model=AccessResponse)
+async def validate_public(req: PublicAccessRequest):
+    """Validate access to a **public** GitHub repository.
+
+    No auth required. Uses the server-level ``GITHUB_API_TOKEN`` (if set in
+    `.env`) only to lift the GitHub API rate limit from 60/hr to 5000/hr —
+    the caller never supplies a token here.
+
+    Behaviour:
+      - Public repo  → ``allowed:true, is_public:true``.
+      - Private repo → 400 "This is a private repository — use /api/access/private instead."
+      - Missing repo → 404.
+    """
+    owner, repo = _parse(req.repo_url)
+
+    # Server-level token only — never accepts user tokens on this endpoint
+    token = settings.GITHUB_API_TOKEN or None
+    status, data = await _fetch_repo_info(owner, repo, token)
+
+    if status == 404:
+        raise HTTPException(
+            status_code=404,
+            detail="Repository not found. If it exists and is private, use /api/access/private instead.",
+        )
+    if status != 200:
+        raise HTTPException(
+            status_code=502,
+            detail=f"GitHub API error {status}: {(str(data)[:200])}",
+        )
+
+    if data.get("private", False):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"'{data.get('full_name','')}' is a PRIVATE repository. "
+                "This endpoint only handles public repos. Use /api/access/private instead."
             ),
         )
-    if resp.status_code == 401:
-        return AccessValidationResponse(
-            allowed=False,
-            is_public=False,
-            reason="GitHub token is invalid or expired. Please re-authenticate.",
-        )
-    if resp.status_code != 200:
-        return AccessValidationResponse(
-            allowed=False,
-            is_public=False,
-            reason=f"GitHub API error ({resp.status_code}): {resp.text[:200]}",
+
+    return AccessResponse(
+        allowed=True,
+        is_public=True,
+        repo_full_name=data.get("full_name", ""),
+        permission="read",
+        default_branch=data.get("default_branch", "main"),
+        private=False,
+        reason="Public repository — read access granted by default.",
+    )
+
+
+# ── Private-only endpoint (FR-002) ──
+
+@router.post("/private", response_model=AccessResponse)
+async def validate_private(
+    req: PrivateAccessRequest,
+    x_github_token: Optional[str] = Header(None, description="GitHub token forwarded by the Node.js backend"),
+    current_user: Optional[dict] = Depends(get_current_user_optional),
+):
+    """Validate access to a **private** GitHub repository.
+
+    Auth required. Token resolution order:
+      1. ``github_token`` field in the request body (explicit override)
+      2. ``X-GitHub-Token`` header (Node.js backend path)
+      3. Logged-in user's stored OAuth token (browser/IDE path)
+      4. → 401
+
+    Behaviour:
+      - Has access → ``allowed:true, private:true, permission:read|write|admin``.
+      - No access  → ``allowed:false`` with a clear reason (404-style).
+      - Public repo → 400 "This is a public repository — use /api/access/public instead."
+    """
+    owner, repo = _parse(req.repo_url)
+
+    # Resolve token in priority order — DO NOT fall back to server token
+    # (server token belongs to the org, not the user; using it here would
+    # let any caller see what the server token's owner can see)
+    token = req.github_token or x_github_token
+    if not token and current_user:
+        user = user_store.get_user(current_user["github_id"])
+        token = user.get("access_token") if user else None
+
+    if not token:
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                "Auth required for private-repo validation. Supply one of: "
+                "(a) 'github_token' in the request body, "
+                "(b) 'X-GitHub-Token' header, "
+                "(c) JWT bearer token from /api/auth/github."
+            ),
         )
 
-    data = resp.json()
-    is_private = bool(data.get("private", False))
+    status, data = await _fetch_repo_info(owner, repo, token)
+
+    if status == 404:
+        # Could be no-access OR genuinely missing — same response either way
+        return AccessResponse(
+            allowed=False,
+            is_public=False,
+            private=True,
+            reason=(
+                "Repository not found, or your token does not have access. "
+                "If your repo is private, ensure the PAT has 'repo' scope."
+            ),
+        )
+    if status == 401:
+        raise HTTPException(status_code=401, detail="GitHub token is invalid or expired.")
+    if status != 200:
+        raise HTTPException(status_code=502, detail=f"GitHub API error {status}: {str(data)[:200]}")
+
+    # Public repo on the private endpoint → reject with redirect hint
+    if not data.get("private", False):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"'{data.get('full_name','')}' is a PUBLIC repository. "
+                "Use /api/access/public for public repos (no auth needed)."
+            ),
+        )
+
     permissions = data.get("permissions", {}) or {}
-
-    # Public repos are always allowed (FR-003)
-    if not is_private:
-        return AccessValidationResponse(
-            allowed=True,
-            is_public=True,
-            repo_full_name=data.get("full_name", ""),
-            permission="read",
-            default_branch=data.get("default_branch", "main"),
-            private=False,
-            reason="Public repository — read access granted by default.",
-        )
-
-    # Private repo — must have at least pull permission (FR-002)
     if permissions.get("admin"):
         perm = "admin"
     elif permissions.get("push"):
@@ -134,7 +211,7 @@ async def validate_access(
     elif permissions.get("pull"):
         perm = "read"
     else:
-        return AccessValidationResponse(
+        return AccessResponse(
             allowed=False,
             is_public=False,
             repo_full_name=data.get("full_name", ""),
@@ -142,7 +219,7 @@ async def validate_access(
             reason="You do not have read access to this private repository.",
         )
 
-    return AccessValidationResponse(
+    return AccessResponse(
         allowed=True,
         is_public=False,
         repo_full_name=data.get("full_name", ""),

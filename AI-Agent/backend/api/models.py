@@ -10,11 +10,20 @@ from typing import Optional
 class IngestRequest(BaseModel):
     repo_url: str = Field(..., description="GitHub repository URL (e.g., https://github.com/owner/repo)")
     repo_name: str = Field(..., description="Name for the repository (e.g., 'owner_repo')")
+    callback_url: Optional[str] = Field(
+        None,
+        description=(
+            "Optional URL to POST the final status to when ingestion finishes "
+            "(complete or error). Useful for the Node.js backend to be notified "
+            "without polling. Body: {status, repo_name, error?, ...stats}."
+        ),
+    )
 
 
 class IngestLocalRequest(BaseModel):
     folder_path: str = Field(..., description="Absolute path to the local folder to ingest")
     repo_name: str = Field(..., description="Name for the repository")
+    callback_url: Optional[str] = Field(None, description="POST'd when ingestion finishes")
 
 
 class RemoteIngestRequest(BaseModel):
@@ -22,6 +31,7 @@ class RemoteIngestRequest(BaseModel):
     repo_name: str = Field(..., description="Name for the repository in the index")
     branch: Optional[str] = Field(None, description="Branch to index (default: repo's default branch)")
     github_token: Optional[str] = Field(None, description="GitHub token for private repos or higher rate limits (5000/hr vs 60/hr)")
+    callback_url: Optional[str] = Field(None, description="POST'd when ingestion finishes")
 
 
 
