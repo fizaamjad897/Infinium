@@ -57,15 +57,14 @@ class Settings(BaseSettings):
     LARGE_CHUNK_SIZE: int = 2048
 
     # ── RAG ──
-    RAG_TOP_K: int = 12              # Increased from 5 to allow better cross-branch comparisons
+    RAG_TOP_K: int = 15             # Increased from 8 for better architectural context
     RELEVANCE_THRESHOLD: float = 0.40  # Higher threshold filters weak matches
 
     # ── Embedding throughput ──
     # We batch many texts into a single Ollama /api/embed call (the newer
     # batch endpoint), then run several batches in parallel.
-    EMBED_BATCH_SIZE: int = 8          # texts per Ollama HTTP call. 4-16 are safe; some
-                                       # Ollama versions reject >100 KB request bodies.
-    EMBED_WORKERS: int = 6             # concurrent /api/embed calls
+    EMBED_BATCH_SIZE: int = 12          # Increased for better throughput
+    EMBED_WORKERS: int = 4             # Reduced to prevent resource contention on Mac
     EMBED_PROGRESS_EVERY: int = 50     # status update every N chunks during embedding
     # Set to true to skip the batch endpoint and go straight to per-text.
     DISABLE_BATCH_EMBED: bool = False

@@ -38,9 +38,11 @@ When answering questions:
 5. **Cross-reference across repos** when the context spans multiple repositories
 6. **Be precise and technical** — provide specific code references, function names, and commit SHAs
 7. **Structure your response** clearly with headers and bullet points for complex questions
-8. **If context is insufficient**, say so clearly and suggest what additional information would help
+8. **Provide code snippets** when the user asks for implementation details, ensuring they are derived from the provided context
+9. **If context is insufficient**, say so clearly and suggest what additional information would help
 
-You are NOT a code generator. You are a reasoning agent that helps developers understand their codebase's history, architecture, and decision-making patterns."""
+You are a reasoning agent that helps developers understand their codebase's history, architecture, and decision-making patterns. While your focus is on understanding and reasoning, you SHOULD provide relevant code examples from the context to clarify your explanations or when explicitly asked for code.
+"""
 
 SINGLE_MODEL_SYSTEM_PROMPT = SYNTHESIS_SYSTEM_PROMPT
 

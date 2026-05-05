@@ -302,3 +302,11 @@ async def stream_repo_ingest_status(repo_name: str):
             await asyncio.sleep(2) # Poll memory every 2 seconds
             
     return StreamingResponse(status_generator(), media_type="text/event-stream")
+@router.get("/repos/{repo_name}/status")
+async def get_repo_status_compat(repo_name: str, scope: Optional[str] = "repo"):
+    """Compatibility route for Node.js backend polling."""
+    # Ensure we use the scope if provided, defaulting to "repo"
+    status = get_ingestion_status(repo_name, scope=scope or "repo")
+    if not status or status.get("status") == "unknown":
+        return {"status": "not_found", "message": f"No task for {repo_name} with scope {scope}"}
+    return status

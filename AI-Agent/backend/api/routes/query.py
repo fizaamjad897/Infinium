@@ -22,13 +22,30 @@ from backend.auth.jwt_handler import get_current_user
 router = APIRouter(prefix="/api", tags=["Query"])
 
 
-@router.post("/query", response_model=QueryResponse)
-async def query_repo(req: QueryRequest):
+@router.post("/query")
+async def query_repo(req: QueryRequest, stream: bool = False):
     """Ask a question about a specific repository.
-
-    This searches within a single indexed repo and generates an answer
-    with cited sources. Supports dual-model reasoning pipeline.
+    
+    Use ?stream=true to get a real-time word-by-word response.
     """
+    if stream:
+        return StreamingResponse(
+            stream_ask(
+                query=req.query,
+                repo_name=req.repo_name,
+                use_hybrid=req.use_hybrid,
+                use_expansion=req.use_expansion,
+                use_dual_model=req.use_dual_model,
+                top_k=req.top_k,
+                model=req.model,
+                conversation_id=req.conversation_id,
+                branch_filter=req.branch_filter,
+                chunk_types=req.chunk_types,
+            ),
+            media_type="text/plain",
+        )
+    
+    # Otherwise, return the standard JSON response
     result = ask(
         query=req.query,
         repo_name=req.repo_name,
@@ -42,30 +59,6 @@ async def query_repo(req: QueryRequest):
         chunk_types=req.chunk_types,
     )
     return result
-
-
-@router.post("/query/stream")
-async def query_repo_stream(req: QueryRequest):
-    """Ask a question and get a streaming response.
-    
-    This is the best way to avoid timeouts on Cloudflare/AWS.
-    The response will be a stream of text tokens.
-    """
-    return StreamingResponse(
-        stream_ask(
-            query=req.query,
-            repo_name=req.repo_name,
-            use_hybrid=req.use_hybrid,
-            use_expansion=req.use_expansion,
-            use_dual_model=req.use_dual_model,
-            top_k=req.top_k,
-            model=req.model,
-            conversation_id=req.conversation_id,
-            branch_filter=req.branch_filter,
-            chunk_types=req.chunk_types,
-        ),
-        media_type="text/plain",
-    )
 
 
 @router.post("/query/all", response_model=QueryResponse)

@@ -51,13 +51,26 @@
   },
   "Infinium-BE": {
     "status": "complete",
-    "updated_at": "2026-04-19T17:06:29.751401",
+    "updated_at": "2026-05-05T23:44:13.149815",
     "repo_url": "https://github.com/fizaamjad897/Infinium-BE.git",
-    "chunks_stored": 18,
-    "files_processed": 8,
-    "commits_processed": 4,
-    "total_chunks": 18,
-    "elapsed_seconds": 7.7
+    "chunks_stored": 94,
+    "files_processed": 30,
+    "commits_processed": 8,
+    "total_chunks": 94,
+    "elapsed_seconds": 23.5,
+    "scope": "repo",
+    "source": "remote_url",
+    "ingested_by": "",
+    "chunks_processed": 94,
+    "chunks_total": 94,
+    "percent_complete": 100.0,
+    "embed_rate_per_sec": 4.93,
+    "eta_seconds": 0,
+    "branches_processed": 1,
+    "branches_indexed": [
+      "main"
+    ],
+    "ingested_branch": "main"
   },
   "infinium-remote": {
     "status": "error",
@@ -389,6 +402,81 @@
     ],
     "total_chunks": 554,
     "elapsed_seconds": 135.0,
+    "ingested_branch": "multi"
+  },
+  "infinium-be-test:branches": {
+    "status": "complete",
+    "updated_at": "2026-05-05T22:44:11.740587",
+    "scope": "branches",
+    "repo_url": "https://github.com/fizaamjad897/Infinium.git",
+    "ingested_by": "",
+    "chunks_processed": 574,
+    "chunks_total": 574,
+    "percent_complete": 100.0,
+    "embed_rate_per_sec": 4.14,
+    "eta_seconds": 0,
+    "chunks_stored": 574,
+    "files_processed": 111,
+    "commits_processed": 28,
+    "branches_processed": 6,
+    "branches_indexed": [
+      "main",
+      "phase-1",
+      "phase-2",
+      "phase-3",
+      "phase-4",
+      "phase-5"
+    ],
+    "total_chunks": 574,
+    "elapsed_seconds": 153.1,
+    "ingested_branch": "multi"
+  },
+  "Infinium-FE:branches": {
+    "status": "completed",
+    "updated_at": "2026-05-06T00:57:17.272231",
+    "scope": "branches",
+    "repo_url": "https://github.com/fizaamjad897/Infinium-FE.git",
+    "ingested_by": "",
+    "chunks_processed": 585,
+    "chunks_total": 585,
+    "percent_complete": 100.0,
+    "embed_rate_per_sec": 8.22,
+    "eta_seconds": 0,
+    "chunks_stored": 585,
+    "files_processed": 163,
+    "commits_processed": 1,
+    "branches_processed": 3,
+    "branches_indexed": [
+      "Auth-Integration",
+      "main",
+      "master"
+    ],
+    "total_chunks": 585,
+    "elapsed_seconds": 73.6,
+    "ingested_branch": "multi"
+  },
+  "ABM-Project:branches": {
+    "status": "completed",
+    "updated_at": "2026-05-06T02:38:50.897774",
+    "scope": "branches",
+    "repo_url": "https://github.com/fizaamjad897/ABM-Project.git",
+    "ingested_by": "",
+    "chunks_processed": 111,
+    "chunks_total": 111,
+    "percent_complete": 100.0,
+    "embed_rate_per_sec": 4.28,
+    "eta_seconds": 0,
+    "chunks_stored": 111,
+    "files_processed": 45,
+    "commits_processed": 7,
+    "branches_processed": 3,
+    "branches_indexed": [
+      "backend/frontend",
+      "base/version-1",
+      "main"
+    ],
+    "total_chunks": 111,
+    "elapsed_seconds": 28.4,
     "ingested_branch": "multi"
   }
 }

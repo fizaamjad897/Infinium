@@ -301,7 +301,7 @@ def ingest_repository(
         print(f"   📊 Stats: {stats}")
         print(f"{'='*60}\n")
         
-        _update_status(repo_name, "complete", status_scope=status_scope, repo_url=repo_url, **stats)
+        _update_status(repo_name, "completed", status_scope=status_scope, repo_url=repo_url, **stats)
         _post_callback(callback_url, {"status": "complete", "repo_name": repo_name, **stats})
         return stats
 
@@ -381,7 +381,7 @@ def ingest_local_folder(
         "total_chunks": total,
         "elapsed_seconds": elapsed,
     }
-    _update_status(repo_name, "complete", folder_path=folder_path, **stats)
+    _update_status(repo_name, "completed", folder_path=folder_path, **stats)
     print(f"   ✅ Ingestion complete in {elapsed}s!")
     _post_callback(callback_url, {"status": "complete", "repo_name": repo_name, **stats})
     return stats
@@ -539,7 +539,7 @@ def ingest_remote_url(
             "source": "remote_url",
             "ingested_branch": target_branches[0] if len(target_branches) == 1 else "",
         }
-        _update_status(repo_name, "complete", status_scope=status_scope, repo_url=repo_url, **stats)
+        _update_status(repo_name, "completed", status_scope=status_scope, repo_url=repo_url, **stats)
         print(f"   ✅ Remote ingestion complete in {elapsed}s!")
         _post_callback(callback_url, {"status": "complete", "repo_name": repo_name, **stats})
         return stats
@@ -576,10 +576,6 @@ def reindex_repository(repo_name: str, github_token: Optional[str] = None) -> di
         return ingest_repository(repo_url, repo_name, github_token=github_token)
     else:
         raise ValueError(f"No source URL or path found for repo: {repo_name}")
-def get_ingestion_status(repo_name: str) -> Optional[dict]:
-    """Get the current status of an ingestion task."""
-    _load_status()
-    return _ingestion_status.get(repo_name)
 
 def list_all_statuses() -> dict:
     """List all ingestion statuses."""
