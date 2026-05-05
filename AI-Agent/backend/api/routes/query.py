@@ -6,6 +6,7 @@ Query API Routes
 - Conversation management (/api/conversation)
 """
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 from typing import Optional
 
 from backend.api.models import (
@@ -13,7 +14,7 @@ from backend.api.models import (
     FeedbackRequest,
     ConversationStartRequest, ConversationStartResponse,
 )
-from backend.rag.query_engine import ask, ask_all
+from backend.rag.query_engine import ask, ask_all, stream_ask
 from backend.rag.conversation import start_conversation, get_history, cleanup_expired
 from backend.feedback.store import save_feedback, get_feedback_stats
 from backend.auth.jwt_handler import get_current_user
@@ -41,6 +42,30 @@ async def query_repo(req: QueryRequest):
         chunk_types=req.chunk_types,
     )
     return result
+
+
+@router.post("/query/stream")
+async def query_repo_stream(req: QueryRequest):
+    """Ask a question and get a streaming response.
+    
+    This is the best way to avoid timeouts on Cloudflare/AWS.
+    The response will be a stream of text tokens.
+    """
+    return StreamingResponse(
+        stream_ask(
+            query=req.query,
+            repo_name=req.repo_name,
+            use_hybrid=req.use_hybrid,
+            use_expansion=req.use_expansion,
+            use_dual_model=req.use_dual_model,
+            top_k=req.top_k,
+            model=req.model,
+            conversation_id=req.conversation_id,
+            branch_filter=req.branch_filter,
+            chunk_types=req.chunk_types,
+        ),
+        media_type="text/plain",
+    )
 
 
 @router.post("/query/all", response_model=QueryResponse)

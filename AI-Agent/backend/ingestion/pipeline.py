@@ -222,9 +222,16 @@ def ingest_repository(
         path = clone_repo(repo_url, dest, github_token=github_token)
         print(f"   ✅ Clone successful at: {path}")
 
+        # Auto-discover branches in the background to avoid API timeouts
+        if branches is None and branch is None:
+            print(f"   🌿 No branch specified — fetching ALL remote branches...")
+            fetch_all_remote_branches(path)
+            branches = list_all_branch_names(path)
+            print(f"   ✅ Found {len(branches)} branches: {branches[:15]}{'...' if len(branches) > 15 else ''}")
+        
         # Make sure all remote branches are available locally before checkout
-        if branches or branch:
-            print(f"   🌿 Fetching all remote branches…")
+        elif branches or branch:
+            print(f"   🌿 Fetching remote branches…")
             fetch_all_remote_branches(path)
             print(f"   ✅ Remote branches fetched")
             
@@ -234,15 +241,10 @@ def ingest_repository(
             available_branches = [b.name for b in repo.branches]
             print(f"   🌿 Available branches: {available_branches[:15]}{'...' if len(available_branches) > 15 else ''}")
             
-            # Check if requested branch exists
-            if branch:
-                if branch in available_branches:
-                    print(f"   ✅ Requested branch '{branch}' exists!")
-                else:
-                    print(f"   ⚠️ WARNING: Requested branch '{branch}' NOT found in available branches!")
-                    print(f"   📌 Available: {available_branches[:10]}")
+            if branch and branch not in available_branches:
+                print(f"   ⚠️ WARNING: Requested branch '{branch}' NOT found!")
         else:
-            print(f"   🌿 No branch specified, using default branch")
+            print(f"   🌿 Using default branch only")
 
         _update_status(repo_name, "scanning_files", status_scope=status_scope)
         print(f"   🔍 Scanning files...")
@@ -574,3 +576,12 @@ def reindex_repository(repo_name: str, github_token: Optional[str] = None) -> di
         return ingest_repository(repo_url, repo_name, github_token=github_token)
     else:
         raise ValueError(f"No source URL or path found for repo: {repo_name}")
+def get_ingestion_status(repo_name: str) -> Optional[dict]:
+    """Get the current status of an ingestion task."""
+    _load_status()
+    return _ingestion_status.get(repo_name)
+
+def list_all_statuses() -> dict:
+    """List all ingestion statuses."""
+    _load_status()
+    return _ingestion_status

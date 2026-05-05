@@ -252,3 +252,48 @@ def ask_all(
         pass
 
     return result
+
+def stream_ask(
+    query: str,
+    repo_name: str,
+    use_hybrid: bool = True,
+    use_expansion: bool = False,
+    use_dual_model: bool = None,
+    top_k: int = None,
+    model: str = None,
+    conversation_id: str = None,
+    branch_filter: Optional[str] = None,
+    chunk_types: Optional[list] = None,
+):
+    """
+    Stream a response for a single repo query.
+    """
+    from backend.rag.generator import generate_stream
+    from backend.rag.retriever import retrieve_context
+    
+    top_k = top_k or settings.RAG_TOP_K
+    if use_dual_model is None:
+        use_dual_model = settings.USE_DUAL_MODEL
+
+    # Retrieval (Blocking)
+    context, chunks = retrieve_context(
+        query, repo_name, top_k=top_k, 
+        branch_filter=branch_filter,
+        chunk_types=chunk_types
+    )
+    
+    # Generation (Streaming)
+    final_answer = ""
+    for token in generate_stream(
+        query=query,
+        context=context,
+        conversation_id=conversation_id or "",
+        use_dual_model=use_dual_model,
+        model_override=model
+    ):
+        final_answer += token
+        yield token
+
+    # Post-processing: save to conversation history
+    if conversation_id:
+        add_turn(conversation_id, query, final_answer)

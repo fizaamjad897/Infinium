@@ -7,31 +7,35 @@ version: "3.9"
 services:
   backend:
     environment:
-      # Pass all production secrets from server environment
       - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
       - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
       - GITHUB_REDIRECT_URI=${GITHUB_REDIRECT_URI}
       - GITHUB_API_TOKEN=${GITHUB_API_TOKEN}
       - JWT_SECRET=${JWT_SECRET}
-      - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET:-}
       - LLM_MODEL=${LLM_MODEL:-minimax-m2.7:cloud}
       - CODE_REASONING_MODEL=${CODE_REASONING_MODEL:-kimi-k2.5:cloud}
-      - EMBED_MODEL=${EMBED_MODEL:-nomic-embed-text}
+      - EMBED_MODEL=${EMBED_MODEL:-mxbai-embed-large}
       - USE_DUAL_MODEL=${USE_DUAL_MODEL:-false}
-    restart: always      # always restart (not unless-stopped)
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "50m"
-        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+    restart: always
 
   ollama:
+    environment:
+      - OLLAMA_NUM_PARALLEL=4
+      - OLLAMA_MAX_LOADED_MODELS=4
+    deploy:
+      resources:
+        limits:
+          memory: 8G
     restart: always
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "50m"
-        max-file: "3"
 
   postgres:
+    command: postgres -c shared_buffers=512MB -c max_connections=100
+    deploy:
+      resources:
+        limits:
+          memory: 1G
     restart: always

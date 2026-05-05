@@ -53,11 +53,7 @@ def _call_ollama_chat(
     timeout: int = 300,
     retries: int = 2,
 ) -> dict:
-    """Call Ollama /api/chat endpoint with retry on transient errors.
-
-    Returns: {"content": str, "tokens": int, "duration_ms": int}
-    """
-    import time
+    """Call Ollama /api/chat endpoint with retry on transient errors."""
     last_error = None
     for attempt in range(retries + 1):
         try:
@@ -76,31 +72,53 @@ def _call_ollama_chat(
             )
             response.raise_for_status()
             result = response.json()
-
             return {
                 "content": result.get("message", {}).get("content", ""),
                 "tokens": result.get("eval_count", 0),
                 "duration_ms": result.get("total_duration", 0) // 1_000_000,
             }
-        except requests.exceptions.Timeout:
-            return {"content": "", "tokens": 0, "duration_ms": 0, "error": "Request timed out"}
-        except requests.exceptions.ConnectionError:
-            return {
-                "content": "",
-                "tokens": 0,
-                "duration_ms": 0,
-                "error": f"Cannot connect to Ollama at {settings.OLLAMA_BASE_URL}. Make sure Ollama is running.",
-            }
         except Exception as e:
             last_error = str(e)
             if hasattr(e, 'response') and e.response is not None:
                 last_error = f"{e} - Body: {e.response.text}"
-            
             if attempt < retries:
-                time.sleep(3 * (attempt + 1))  # 3s, 6s backoff
+                time.sleep(3 * (attempt + 1))
                 continue
             return {"content": "", "tokens": 0, "duration_ms": 0, "error": last_error}
-    return {"content": "", "tokens": 0, "duration_ms": 0, "error": last_error}
+
+def _stream_ollama_chat(
+    model: str,
+    messages: list[dict],
+    temperature: float = 0.1,
+    context_window: int = 8192,
+):
+    """Yield tokens from Ollama /api/chat in real-time."""
+    import json
+    try:
+        response = requests.post(
+            f"{settings.OLLAMA_BASE_URL}/api/chat",
+            json={
+                "model": model,
+                "messages": messages,
+                "stream": True,
+                "options": {
+                    "temperature": temperature,
+                    "num_ctx": context_window,
+                },
+            },
+            stream=True,
+            timeout=300,
+        )
+        response.raise_for_status()
+        for line in response.iter_lines():
+            if line:
+                chunk = json.loads(line.decode("utf-8"))
+                if "message" in chunk:
+                    yield chunk["message"].get("content", "")
+                if chunk.get("done"):
+                    break
+    except Exception as e:
+        yield f"\n[Streaming Error: {e}]"
 
 
 
@@ -363,3 +381,55 @@ def generate_response(
     trace.finish()
     result["reasoning_trace"] = trace.to_dict()
     return result
+
+def generate_stream(
+    query: str,
+    context: str,
+    conversation_id: str = "",
+    use_dual_model: bool = False,
+    model_override: Optional[str] = None,
+):
+    """
+    Generate a response stream. 
+    If use_dual_model is True:
+      1. Blocking reasoning step (Kimi)
+      2. Yield reasoning trace
+      3. Streaming synthesis step (Minimax)
+    """
+    from backend.rag.conversation import get_history
+    history = get_history(conversation_id) if conversation_id else []
+    
+    messages = []
+    for turn in history:
+        messages.append({"role": "user", "content": turn["query"]})
+        messages.append({"role": "assistant", "content": turn["answer"]})
+
+    # Step 1: Reasoning (Always blocking for now as it's an internal step)
+    reasoning_content = ""
+    if use_dual_model:
+        yield "#### 🧠 Reasoning...\n"
+        reasoning_messages = messages + [
+            {"role": "system", "content": REASONING_SYSTEM_PROMPT},
+            {"role": "user", "content": f"Analyze the following codebase context to answer this question:\n\nQuestion: {query}\n\nCodebase Context:\n{context}"}
+        ]
+        resp = _call_ollama_chat(settings.CODE_REASONING_MODEL, reasoning_messages)
+        reasoning_content = resp.get("content", "")
+        # Yield a snippet of reasoning to show progress
+        snippet = reasoning_content[:300].replace("\n", " ")
+        yield f"\n> {snippet}... [Analysis Complete]\n\n"
+
+    # Step 2: Synthesis (Streaming)
+    model = model_override or settings.LLM_MODEL
+    system_prompt = SYNTHESIS_SYSTEM_PROMPT
+    user_content = f"Context from the codebase:\n{context}\n\n"
+    if reasoning_content:
+        user_content += f"Expert Analysis:\n{reasoning_content}\n\n"
+    user_content += f"Question: {query}"
+    
+    synthesis_messages = messages + [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content}
+    ]
+    
+    for token in _stream_ollama_chat(model, synthesis_messages):
+        yield token

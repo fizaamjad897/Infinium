@@ -48,11 +48,11 @@ case "$ACTION" in
     echo "🔑  Logging into Ollama (cloud models)..."
     docker compose exec ollama ollama login
     echo "📥  Pulling embed model..."
-    docker compose exec ollama ollama pull nomic-embed-text
+    docker compose exec ollama ollama pull mxbai-embed-large
     echo "📥  Pulling cloud LLM (minimax)..."
-    docker compose exec ollama ollama run minimax-m2.7:cloud --keepalive 0 || true
+    docker compose exec ollama ollama pull minimax-m2.7:cloud
     echo "📥  Pulling cloud reasoning model (kimi)..."
-    docker compose exec ollama ollama run kimi-k2.5:cloud --keepalive 0 || true
+    docker compose exec ollama ollama pull kimi-k2.5:cloud
     echo "✅  Models ready!"
     ;;
 

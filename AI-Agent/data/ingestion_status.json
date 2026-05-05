@@ -340,5 +340,55 @@
     "total_chunks": 546,
     "elapsed_seconds": 128.8,
     "ingested_branch": "multi"
+  },
+  "Mini-Excel": {
+    "status": "complete",
+    "updated_at": "2026-05-05T17:50:53.555086",
+    "scope": "repo",
+    "repo_url": "https://github.com/RaveehaMohsin/Mini-Excel",
+    "source": "remote_url",
+    "ingested_by": "",
+    "chunks_processed": 52,
+    "chunks_total": 52,
+    "percent_complete": 100.0,
+    "embed_rate_per_sec": 4.44,
+    "eta_seconds": 0,
+    "chunks_stored": 52,
+    "files_processed": 1,
+    "commits_processed": 1,
+    "branches_processed": 1,
+    "branches_indexed": [
+      "main"
+    ],
+    "total_chunks": 52,
+    "elapsed_seconds": 17.8,
+    "ingested_branch": "main"
+  },
+  "infinium99:branches": {
+    "status": "complete",
+    "updated_at": "2026-05-05T19:36:53.225003",
+    "scope": "branches",
+    "repo_url": "https://github.com/fizaamjad897/Infinium.git",
+    "ingested_by": "",
+    "chunks_processed": 554,
+    "chunks_total": 554,
+    "percent_complete": 100.0,
+    "embed_rate_per_sec": 4.26,
+    "eta_seconds": 0,
+    "chunks_stored": 554,
+    "files_processed": 107,
+    "commits_processed": 27,
+    "branches_processed": 6,
+    "branches_indexed": [
+      "main",
+      "phase-1",
+      "phase-2",
+      "phase-3",
+      "phase-4",
+      "phase-5"
+    ],
+    "total_chunks": 554,
+    "elapsed_seconds": 135.0,
+    "ingested_branch": "multi"
   }
 }

@@ -14,13 +14,18 @@ import re
 import hmac
 import hashlib
 import httpx
+import asyncio
+import json
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Header, Depends
+from fastapi.responses import StreamingResponse
 from typing import Optional
 
 from backend.api.models import IngestRequest, IngestLocalRequest, IngestResponse
 from backend.ingestion.pipeline import (
     ingest_repository,
     ingest_local_folder,
+    get_ingestion_status,
+    list_all_statuses,
 )
 from backend.auth.jwt_handler import get_current_user_optional
 from backend.auth.models import UserStore
@@ -164,25 +169,12 @@ async def ingest_all_branches(
     else:
         print(f"   🌍 Public repo detected for {req.repo_name} — ingesting all branches")
 
-    # Fetch all branches (branch in payload is ignored)
-    from backend.ingestion.github_loader import fetch_all_remote_branches, list_all_branch_names
-    import os
-    dest = os.path.join(settings.REPO_CACHE_DIR, req.repo_name.replace("/", "_"))
-    
-    # Clone repo to get all branches
-    from backend.ingestion.github_loader import clone_repo
-    path = clone_repo(req.repo_url, dest, github_token=github_token)
-    fetch_all_remote_branches(path)
-    all_branches = list_all_branch_names(path)
-    
-    print(f"   🌿 Found {len(all_branches)} branches: {all_branches[:10]}{'...' if len(all_branches) > 10 else ''}")
-
-    # Use clone-based ingestion with all branches and the faster embed model
+    # Fire and forget! Move EVERYTHING to background to avoid Cloudflare timeout.
     background_tasks.add_task(
         ingest_repository,
         repo_url=req.repo_url,
         repo_name=req.repo_name,
-        branches=all_branches,
+        branches=None,  # Pipeline will now fetch these in the background
         github_token=github_token,
         ingested_by=user_login,
         callback_url=req.callback_url or "",
@@ -191,9 +183,9 @@ async def ingest_all_branches(
     )
 
     return IngestResponse(
-        status="branches_ingestion_started",
+        status="ingestion_queued",
         repo_name=req.repo_name,
-        message=f"Background ingestion started for all {len(all_branches)} branches of {req.repo_name} using {settings.BRANCH_EMBED_MODEL}.",
+        message=f"Multi-branch ingestion queued for {req.repo_name}. Cloning and branch scanning will happen in the background.",
     )
 
 # ── Local-folder ingestion ──
@@ -270,3 +262,43 @@ async def github_webhook(
             return {"status": "sync_triggered", "event": event, "repo": repo_name}
 
     return {"status": "ignored", "event": event}
+
+# ── Status tracking routes ──
+
+@router.get("/ingest/status/all")
+async def get_all_ingest_statuses():
+    """List all ingestion statuses currently in memory."""
+    return list_all_statuses()
+
+@router.get("/ingest/status/{repo_name}")
+async def get_repo_ingest_status(repo_name: str):
+    """Get the current ingestion status for a specific repository."""
+    status = get_ingestion_status(repo_name)
+    if not status:
+        raise HTTPException(status_code=404, detail=f"No ingestion status found for {repo_name}")
+    return status
+
+@router.get("/ingest/status/{repo_name}/stream")
+async def stream_repo_ingest_status(repo_name: str):
+    """Stream the ingestion status using Server-Sent Events (SSE)."""
+    async def status_generator():
+        last_step = ""
+        while True:
+            status = get_ingestion_status(repo_name)
+            if not status:
+                msg = json.dumps({"status": "not_found", "message": f"No task for {repo_name}"})
+                yield f"data: {msg}\n\n"
+                break
+            
+            # Only send if something changed
+            current_step = status.get("step", "")
+            if current_step != last_step or current_step == "completed":
+                yield f"data: {json.dumps(status)}\n\n"
+                last_step = current_step
+            
+            if current_step in ("completed", "failed", "success"):
+                break
+                
+            await asyncio.sleep(2) # Poll memory every 2 seconds
+            
+    return StreamingResponse(status_generator(), media_type="text/event-stream")
