@@ -18,7 +18,8 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     LLM_MODEL: str = "minimax-m2.7:cloud"
     CODE_REASONING_MODEL: str = "kimi-k2.5:cloud"
-    EMBED_MODEL: str = "nomic-embed-text"
+    EMBED_MODEL: str = "mxbai-embed-large"
+    BRANCH_EMBED_MODEL: str = "mxbai-embed-large"
 
     # ── Dual-Model Pipeline ──
     # OFF by default for speed — enable per-request with use_dual_model=true
@@ -56,7 +57,7 @@ class Settings(BaseSettings):
     LARGE_CHUNK_SIZE: int = 2048
 
     # ── RAG ──
-    RAG_TOP_K: int = 5               # Fewer chunks → smaller prompt → faster LLM
+    RAG_TOP_K: int = 12              # Increased from 5 to allow better cross-branch comparisons
     RELEVANCE_THRESHOLD: float = 0.40  # Higher threshold filters weak matches
 
     # ── Embedding throughput ──

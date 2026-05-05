@@ -15,7 +15,7 @@ from typing import Optional
 import hashlib
 from backend.ingestion.github_loader import (
     clone_repo, walk_files, walk_files_at_branch,
-    fetch_all_remote_branches, list_local_branch_names,
+    fetch_all_remote_branches, list_all_branch_names,
     extract_commits, extract_commit_diffs, extract_branches,
 )
 from backend.ingestion.chunker import (
@@ -104,9 +104,10 @@ def _save_status():
         pass
 
 
-def get_ingestion_status(repo_name: str) -> dict:
+def get_ingestion_status(repo_name: str, scope: str = "repo") -> dict:
     _load_status()
-    return _ingestion_status.get(repo_name, {"status": "unknown"})
+    key = f"{repo_name}:{scope}" if scope != "repo" else repo_name
+    return _ingestion_status.get(key, {"status": "unknown"})
 
 
 def get_all_repos() -> list[dict]:
@@ -114,25 +115,29 @@ def get_all_repos() -> list[dict]:
     return [{"repo_name": name, **status} for name, status in _ingestion_status.items()]
 
 
-def _update_status(repo_name: str, status: str, **kwargs):
+def _update_status(repo_name: str, status: str, status_scope: str = "repo", **kwargs):
     _load_status()
-    if repo_name not in _ingestion_status:
-        _ingestion_status[repo_name] = {}
+    key = f"{repo_name}:{status_scope}" if status_scope != "repo" else repo_name
+    if key not in _ingestion_status:
+        _ingestion_status[key] = {}
+    
     # Clear stale error from previous runs when transitioning to a new active status
     active_statuses = {"cloning", "scanning_files", "fetching_repo_info",
                        "fetching_files", "fetching_commits", "fetching_branches",
                        "extracting_branches", "extracting_diffs", "chunking", "embedding"}
     if status in active_statuses:
-        _ingestion_status[repo_name].pop("error", None)
-    _ingestion_status[repo_name].update({
+        _ingestion_status[key].pop("error", None)
+    
+    _ingestion_status[key].update({
         "status": status,
         "updated_at": datetime.now().isoformat(),
+        "scope": status_scope,
         **kwargs,
     })
     _save_status()
 
 
-def _chunk_and_store(files, commits_with_diffs, commits_basic, branches, repo_name, collection):
+def _chunk_and_store(files, commits_with_diffs, commits_basic, branches, repo_name, collection, status_scope: str = "repo", embed_model: Optional[str] = None):
     """Shared chunk+embed+store logic used by all ingest paths."""
     all_chunks = []
 
@@ -169,6 +174,7 @@ def _chunk_and_store(files, commits_with_diffs, commits_basic, branches, repo_na
         remaining = (total - done) / rate if rate > 0 else 0
         _update_status(
             repo_name, "embedding",
+            status_scope=status_scope,
             chunks_processed=done,
             chunks_total=total,
             percent_complete=round(100 * done / total, 1) if total else 0,
@@ -176,7 +182,7 @@ def _chunk_and_store(files, commits_with_diffs, commits_basic, branches, repo_na
             eta_seconds=int(remaining),
         )
 
-    stored = embed_and_store(all_chunks, collection, repo_name=repo_name, progress_callback=_on_progress)
+    stored = embed_and_store(all_chunks, collection, repo_name=repo_name, progress_callback=_on_progress, embed_model=embed_model)
     return stored, total_chunks
 
 
@@ -188,6 +194,8 @@ def ingest_repository(
     callback_url: str = "",
     branch: Optional[str] = None,
     branches: Optional[list[str]] = None,
+    embed_model: Optional[str] = None,
+    status_scope: str = "repo",
 ) -> dict:
     """Full ingestion pipeline for a GitHub repository (cloned)."""
 
@@ -205,7 +213,7 @@ def ingest_repository(
     print(f"{'='*60}\n")
     
     start_time = time.time()
-    _update_status(repo_name, "cloning", repo_url=repo_url, ingested_by=ingested_by)
+    _update_status(repo_name, "cloning", status_scope=status_scope, repo_url=repo_url, ingested_by=ingested_by)
 
     try:
         dest = os.path.join(settings.REPO_CACHE_DIR, repo_name.replace("/", "_"))
@@ -236,7 +244,7 @@ def ingest_repository(
         else:
             print(f"   🌿 No branch specified, using default branch")
 
-        _update_status(repo_name, "scanning_files")
+        _update_status(repo_name, "scanning_files", status_scope=status_scope)
         print(f"   🔍 Scanning files...")
 
         if branches:
@@ -251,7 +259,7 @@ def ingest_repository(
         
         print(f"   📄 {len(files)} source files found")
 
-        _update_status(repo_name, "extracting_branches")
+        _update_status(repo_name, "extracting_branches", status_scope=status_scope)
         print(f"   🌿 Extracting branch metadata...")
         branch_meta = extract_branches(path)
         print(f"   🌿 Found {len(branch_meta)} branches total")
@@ -260,18 +268,18 @@ def ingest_repository(
         branch_names = [b.get("name", "unknown") for b in branch_meta]
         print(f"   🌿 Branch names: {branch_names}")
 
-        _update_status(repo_name, "extracting_diffs")
+        _update_status(repo_name, "extracting_diffs", status_scope=status_scope)
         print(f"   📜 Extracting commit diffs (last {settings.MAX_COMMITS} commits)...")
         commits_with_diffs = extract_commit_diffs(path, max_commits=settings.MAX_COMMITS)
         print(f"   📜 Got {len(commits_with_diffs)} commits with diffs")
 
-        _update_status(repo_name, "chunking")
+        _update_status(repo_name, "chunking", status_scope=status_scope)
         print(f"   ✂️ Chunking content...")
 
-        _update_status(repo_name, "embedding")
+        _update_status(repo_name, "embedding", status_scope=status_scope)
         print(f"   🧮 Generating embeddings and storing...")
         collection = get_chroma_collection(repo_name)
-        stored, total = _chunk_and_store(files, commits_with_diffs, [], branch_meta, repo_name, collection)
+        stored, total = _chunk_and_store(files, commits_with_diffs, [], branch_meta, repo_name, collection, status_scope=status_scope, embed_model=embed_model)
 
         elapsed = round(time.time() - start_time, 1)
         stats = {
@@ -291,7 +299,7 @@ def ingest_repository(
         print(f"   📊 Stats: {stats}")
         print(f"{'='*60}\n")
         
-        _update_status(repo_name, "complete", repo_url=repo_url, **stats)
+        _update_status(repo_name, "complete", status_scope=status_scope, repo_url=repo_url, **stats)
         _post_callback(callback_url, {"status": "complete", "repo_name": repo_name, **stats})
         return stats
 
@@ -304,7 +312,7 @@ def ingest_repository(
         print(f"   Traceback: {traceback.format_exc()}")
         print(f"{'='*60}\n")
         
-        _update_status(repo_name, "error", error=str(e))
+        _update_status(repo_name, "error", status_scope=status_scope, error=str(e))
         _post_callback(callback_url, {"status": "error", "repo_name": repo_name, "error": str(e)})
         raise
 
@@ -315,6 +323,7 @@ def ingest_local_folder(
     callback_url: str = "",
     branch: Optional[str] = None,
     branches: Optional[list[str]] = None,
+    embed_model: Optional[str] = None,
 ) -> dict:
     """Ingest a local folder — walks files + extracts git history if available.
 
@@ -358,7 +367,7 @@ def ingest_local_folder(
     _update_status(repo_name, "embedding")
     print(f"   🧮 Generating embeddings and storing...")
     collection = get_chroma_collection(repo_name)
-    stored, total = _chunk_and_store(files, commits_with_diffs, [], branch_meta, repo_name, collection)
+    stored, total = _chunk_and_store(files, commits_with_diffs, [], branch_meta, repo_name, collection, embed_model=embed_model)
 
     elapsed = round(time.time() - start_time, 1)
     stats = {
@@ -384,6 +393,8 @@ def ingest_remote_url(
     ingested_by: str = "",
     callback_url: str = "",
     branches: Optional[list[str]] = None,
+    status_scope: str = "repo",
+    embed_model: Optional[str] = None,
 ) -> dict:
     """Ingest a public GitHub repo via the GitHub API — no git clone needed.
 
@@ -397,7 +408,7 @@ def ingest_remote_url(
 
     print(f"\n🚀 Starting remote URL ingestion for: {repo_name} ({repo_url})")
     start_time = time.time()
-    _update_status(repo_name, "fetching_repo_info", repo_url=repo_url, source="remote_url", ingested_by=ingested_by)
+    _update_status(repo_name, "fetching_repo_info", status_scope=status_scope, repo_url=repo_url, source="remote_url", ingested_by=ingested_by)
 
     try:
         owner, repo = _parse_repo_url(repo_url)
@@ -455,7 +466,7 @@ def ingest_remote_url(
         if not target_branches:
             target_branches = [actual_default]
 
-        _update_status(repo_name, "fetching_files")
+        _update_status(repo_name, "fetching_files", status_scope=status_scope)
         files: list[dict] = []
         if len(target_branches) == 1:
             # Single-branch: behaviour identical to before
@@ -487,7 +498,7 @@ def ingest_remote_url(
                 files.append(f)
             print(f"   📁 Multi-branch dedup: {len(files)} unique files across {len(target_branches)} branches")
 
-        _update_status(repo_name, "fetching_commits")
+        _update_status(repo_name, "fetching_commits", status_scope=status_scope)
         print(f"   📜 Fetching commit history (per branch)...")
         raw_commits: list[dict] = []
         for b in target_branches:
@@ -500,19 +511,19 @@ def ingest_remote_url(
                 print(f"   ⚠️ Could not fetch commits for {b}: {e}")
         print(f"   📜 Got {len(raw_commits)} commits across {len(target_branches)} branches")
 
-        _update_status(repo_name, "fetching_branches")
+        _update_status(repo_name, "fetching_branches", status_scope=status_scope)
         print(f"   🌿 Fetching branches metadata...")
         raw_branches = fetch_repo_branches(owner, repo, github_token)
         for b in raw_branches:
             b["is_default"] = (b["name"] == actual_default)
 
-        _update_status(repo_name, "chunking")
+        _update_status(repo_name, "chunking", status_scope=status_scope)
         print(f"   ✂️ Chunking content...")
 
-        _update_status(repo_name, "embedding")
+        _update_status(repo_name, "embedding", status_scope=status_scope)
         print(f"   🧮 Generating embeddings and storing...")
         collection = get_chroma_collection(repo_name)
-        stored, total = _chunk_and_store(files, [], raw_commits, raw_branches, repo_name, collection)
+        stored, total = _chunk_and_store(files, [], raw_commits, raw_branches, repo_name, collection, status_scope=status_scope, embed_model=embed_model)
 
         elapsed = round(time.time() - start_time, 1)
         stats = {
@@ -526,13 +537,13 @@ def ingest_remote_url(
             "source": "remote_url",
             "ingested_branch": target_branches[0] if len(target_branches) == 1 else "",
         }
-        _update_status(repo_name, "complete", repo_url=repo_url, **stats)
+        _update_status(repo_name, "complete", status_scope=status_scope, repo_url=repo_url, **stats)
         print(f"   ✅ Remote ingestion complete in {elapsed}s!")
         _post_callback(callback_url, {"status": "complete", "repo_name": repo_name, **stats})
         return stats
 
     except Exception as e:
-        _update_status(repo_name, "error", error=str(e))
+        _update_status(repo_name, "error", status_scope=status_scope, error=str(e))
         print(f"   ❌ Remote ingestion failed: {e}")
         _post_callback(callback_url, {"status": "error", "repo_name": repo_name, "error": str(e)})
         raise

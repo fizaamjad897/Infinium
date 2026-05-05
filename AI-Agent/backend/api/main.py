@@ -33,7 +33,6 @@ from backend.auth.github_oauth import router as auth_router
 from backend.api.routes.ingest import router as ingest_router
 from backend.api.routes.query import router as query_router
 from backend.api.routes.repos import router as repos_router
-from backend.api.routes.remote import router as remote_router
 from backend.api.routes.git_history import router as git_router
 from backend.api.routes.access import router as access_router
 from backend.api.routes.dashboard import router as dashboard_router
@@ -46,7 +45,6 @@ app.include_router(auth_router)
 app.include_router(ingest_router)
 app.include_router(query_router)
 app.include_router(repos_router)
-app.include_router(remote_router)
 app.include_router(git_router)
 app.include_router(access_router)
 app.include_router(dashboard_router)
@@ -73,6 +71,7 @@ def on_startup():
     print(f"   🤖 LLM Model:       {settings.LLM_MODEL}")
     print(f"   🧠 Reasoning Model: {settings.CODE_REASONING_MODEL}")
     print(f"   📐 Embed Model:     {settings.EMBED_MODEL}")
+    print(f"   🌿 Branch Embed:    {settings.BRANCH_EMBED_MODEL}")
     print(f"   🔀 Dual-Model:      {'ON' if settings.USE_DUAL_MODEL else 'OFF'}")
 
 
@@ -121,6 +120,7 @@ def health():
         "config": {
             "llm_model": settings.LLM_MODEL,
             "embed_model": settings.EMBED_MODEL,
+            "branch_embed_model": settings.BRANCH_EMBED_MODEL,
             "github_oauth_configured": bool(settings.GITHUB_CLIENT_ID),
         },
     }

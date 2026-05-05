@@ -93,6 +93,9 @@ def _call_ollama_chat(
             }
         except Exception as e:
             last_error = str(e)
+            if hasattr(e, 'response') and e.response is not None:
+                last_error = f"{e} - Body: {e.response.text}"
+            
             if attempt < retries:
                 time.sleep(3 * (attempt + 1))  # 3s, 6s backoff
                 continue

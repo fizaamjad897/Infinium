@@ -36,39 +36,22 @@ def build_context_block(
     sections = []
     char_budget = max_chars
 
-    # ── Code / Documentation ──────────────────────────────────────────────
-    for chunk_type in ["code", "documentation"]:
-        type_chunks = by_type.get(chunk_type, [])
-        if not type_chunks:
-            continue
-
-        header = "📄 SOURCE CODE" if chunk_type == "code" else "📚 DOCUMENTATION"
-        sections.append(f"{'─' * 60}\n{header}\n{'─' * 60}")
-
-        # Group by file path
-        by_file: dict[str, list[dict]] = defaultdict(list)
-        for c in type_chunks:
-            by_file[c.get("source", "unknown")].append(c)
-
-        for file_path, file_chunks in by_file.items():
-            lang = file_chunks[0].get("language", "")
-            lang_tag = f" ({lang})" if lang else ""
-            sections.append(f"\n### {file_path}{lang_tag}")
-            for c in file_chunks:
-                text = c["text"]
-                if len(text) > char_budget:
-                    text = text[:char_budget] + "\n... [truncated]"
-                    char_budget = 0
-                else:
-                    char_budget -= len(text)
-                sections.append(text)
-                if char_budget <= 0:
-                    sections.append("... [context budget exceeded]")
-                    break
+    # ── 1. Branches (CRITICAL: Move to top so LLM sees the structure first) ──
+    branch_chunks = by_type.get("branch", [])
+    if branch_chunks and char_budget > 0:
+        sections.append(f"{'=' * 60}\n🌿 AVAILABLE REPOSITORY BRANCHES\n{'=' * 60}")
+        # Quick summary for the LLM
+        branch_names = [c.get("text", "").split("|")[1].strip() if "|" in c.get("text", "") else "unknown" for c in branch_chunks]
+        sections.append(f"Detected Branches: {', '.join(branch_names)}\n")
+        
+        for c in branch_chunks:
+            text = c["text"]
+            char_budget -= len(text)
+            sections.append(f"\n{text}")
             if char_budget <= 0:
                 break
 
-    # ── Commits / Commit Diffs ────────────────────────────────────────────
+    # ── 2. Commits / Commit Diffs ────────────────────────────────────────────
     for chunk_type, header in [("commit_diff", "🔀 COMMIT DIFFS"), ("commit", "📜 COMMIT HISTORY")]:
         type_chunks = by_type.get(chunk_type, [])
         if not type_chunks or char_budget <= 0:
@@ -86,14 +69,37 @@ def build_context_block(
             if char_budget <= 0:
                 break
 
-    # ── Branches ──────────────────────────────────────────────────────────
-    branch_chunks = by_type.get("branch", [])
-    if branch_chunks and char_budget > 0:
-        sections.append(f"\n{'─' * 60}\n🌿 BRANCHES\n{'─' * 60}")
-        for c in branch_chunks:
-            text = c["text"]
-            char_budget -= len(text)
-            sections.append(f"\n{text}")
+    # ── 3. Code / Documentation ──────────────────────────────────────────────
+    for chunk_type in ["code", "documentation"]:
+        type_chunks = by_type.get(chunk_type, [])
+        if not type_chunks or char_budget <= 0:
+            continue
+
+        header = "📄 SOURCE CODE" if chunk_type == "code" else "📚 DOCUMENTATION"
+        sections.append(f"\n{'─' * 60}\n{header}\n{'─' * 60}")
+
+        # Group by file path
+        by_file: dict[str, list[dict]] = defaultdict(list)
+        for c in type_chunks:
+            by_file[c.get("source", "unknown")].append(c)
+
+        for file_path, file_chunks in by_file.items():
+            lang = file_chunks[0].get("language", "")
+            # Include branch info in file header if available
+            branch_info = f" [Branch: {file_chunks[0].get('branch', 'unknown')}]" if file_chunks[0].get('branch') else ""
+            sections.append(f"\n### {file_path}{branch_info} ({lang})")
+            
+            for c in file_chunks:
+                text = c["text"]
+                if len(text) > char_budget:
+                    text = text[:char_budget] + "\n... [truncated]"
+                    char_budget = 0
+                else:
+                    char_budget -= len(text)
+                sections.append(text)
+                if char_budget <= 0:
+                    sections.append("... [context budget exceeded]")
+                    break
             if char_budget <= 0:
                 break
 

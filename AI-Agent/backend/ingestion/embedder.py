@@ -42,17 +42,17 @@ def _get_session() -> requests.Session:
 
 
 # Track whether the Ollama server supports /api/embed (batched). Set after first probe.
-_supports_batch_endpoint: Optional[bool] = None
+_supports_batch_endpoint: dict[str, Optional[bool]] = {}
 _supports_batch_lock = threading.Lock()
 
 # Warmup state — ensure the model is loaded before parallel requests hit it.
 # Many Ollama versions return 400 when several concurrent calls arrive while
 # the model is still cold-loading from disk.
-_model_warmed: bool = False
+_model_warmed: dict[str, bool] = {}
 _model_warmup_lock = threading.Lock()
 
 
-def _warm_up_embed_model() -> None:
+def _warm_up_embed_model(model: Optional[str] = None) -> None:
     """Synchronous probe + pin: loads the embed model into memory and tells
     Ollama to KEEP it loaded (``keep_alive: -1``).
 
@@ -61,33 +61,33 @@ def _warm_up_embed_model() -> None:
     in play. Each eviction = ~600ms cold reload on the next call, which
     explains slow ingestions that should be fast.
     """
+    model = model or settings.EMBED_MODEL
     global _model_warmed, _supports_batch_endpoint
-    if _model_warmed:
+    if _model_warmed.get(model):
         return
     with _model_warmup_lock:
-        if _model_warmed:
+        if _model_warmed.get(model):
             return
         session = _get_session()
         try:
             resp = session.post(
                 f"{settings.OLLAMA_BASE_URL}/api/embed",
                 json={
-                    "model": settings.EMBED_MODEL,
+                    "model": model,
                     "input": "warmup",
-                    "keep_alive": -1,    # pin forever
                 },
                 timeout=120,
             )
             if resp.status_code == 200:
-                _supports_batch_endpoint = True
-                _model_warmed = True
-                print(f"   🔥 Pinned {settings.EMBED_MODEL} via /api/embed (keep_alive: -1)")
+                _supports_batch_endpoint[model] = True
+                _model_warmed[model] = True
+                print(f"   🔥 Pinned {model} via /api/embed (keep_alive: -1)")
                 return
-            elif resp.status_code in (400, 404):
+            elif resp.status_code == 404:
+                _disable_batch_endpoint("warmup failed (404) — endpoint not available.", model=model)
+            elif resp.status_code == 400:
                 body = (resp.text or "")[:300]
-                print(f"   ⚠️ /api/embed warmup got {resp.status_code}: {body!r}")
-                # NOTE: do NOT permanently disable — try per-call later, the
-                # error might be content-specific not schema-incompatible.
+                print(f"   ⚠️ /api/embed warmup got 400: {body!r}")
         except Exception as e:
             print(f"   ⚠️ /api/embed warmup error: {e}")
 
@@ -95,16 +95,16 @@ def _warm_up_embed_model() -> None:
         try:
             resp = session.post(
                 f"{settings.OLLAMA_BASE_URL}/api/embeddings",
-                json={"model": settings.EMBED_MODEL, "prompt": "warmup", "keep_alive": -1},
+                json={"model": model, "prompt": "warmup"},
                 timeout=120,
             )
             if resp.status_code == 200:
-                print(f"   🔥 Pinned {settings.EMBED_MODEL} via /api/embeddings (keep_alive: -1)")
+                print(f"   🔥 Pinned {model} via /api/embeddings (keep_alive: -1)")
             else:
                 print(f"   ⚠️ /api/embeddings warmup got {resp.status_code}")
         except Exception as e:
             print(f"   ⚠️ /api/embeddings warmup error: {e}")
-        _model_warmed = True
+        _model_warmed[model] = True
 
 
 def get_chroma_client() -> chromadb.PersistentClient:
@@ -154,6 +154,19 @@ def _truncate_for_embed(text: str, max_chars: int = MAX_EMBED_CHARS) -> str:
     return text[:max_chars] + "\n... [truncated for embedding]"
 
 
+def _get_vector_dim(model: str) -> int:
+    """Heuristic for vector dimensions. nomic=768, mxbai=1024.
+    If unknown, we'll try to get it from the first successful embed.
+    """
+    if "nomic" in model.lower():
+        return 768
+    if "mxbai" in model.lower():
+        return 1024
+    if "minilm" in model.lower():
+        return 384
+    return 768  # fallback
+
+
 def _is_context_length_error(resp_text: str) -> bool:
     """Heuristic: does this Ollama error body indicate context overflow?"""
     if not resp_text:
@@ -164,7 +177,7 @@ def _is_context_length_error(resp_text: str) -> bool:
             or "exceeds" in lowered and "length" in lowered)
 
 
-def _ollama_embed(text: str, retries: int = 3) -> list[float]:
+def _ollama_embed(text: str, retries: int = 3, model: Optional[str] = None) -> list[float]:
     """Single-text embed via Ollama's legacy /api/embeddings endpoint.
 
     Used as a fallback inside the batch function and for one-off query embeds.
@@ -173,6 +186,7 @@ def _ollama_embed(text: str, retries: int = 3) -> list[float]:
     Context-length errors are handled by progressively halving the text
     until it fits or we hit ``MIN_EMBED_CHARS``.
     """
+    model = model or settings.EMBED_MODEL
     text = _truncate_for_embed(text)
     session = _get_session()
 
@@ -182,9 +196,8 @@ def _ollama_embed(text: str, retries: int = 3) -> list[float]:
             resp = session.post(
                 f"{settings.OLLAMA_BASE_URL}/api/embeddings",
                 json={
-                    "model": settings.EMBED_MODEL,
+                    "model": model,
                     "prompt": current,
-                    "keep_alive": -1,
                 },
                 timeout=60,
             )
@@ -206,41 +219,40 @@ def _ollama_embed(text: str, retries: int = 3) -> list[float]:
             raise RuntimeError(f"Ollama embedding failed after {retries} attempts: {e}")
 
 
-def _disable_batch_endpoint(reason: str):
+def _disable_batch_endpoint(reason: str, model: Optional[str] = None):
     """Permanently disable the /api/embed batch path for the rest of this run."""
     global _supports_batch_endpoint
+    model_key = model or settings.EMBED_MODEL
     with _supports_batch_lock:
-        if _supports_batch_endpoint is not False:
-            _supports_batch_endpoint = False
-            print(f"   ℹ️ Ollama /api/embed disabled: {reason}")
-            print(f"   ℹ️ Falling back to per-text /api/embeddings for the rest of this ingest.")
+        if _supports_batch_endpoint.get(model_key) is False:
+            return  # already disabled, don't spam
+        _supports_batch_endpoint[model_key] = False
+        print(f"   ℹ️ Ollama /api/embed disabled for model {model_key}: {reason}")
+        print(f"   ℹ️ Falling back to per-text /api/embeddings for the rest of this ingest.")
 
 
-def _per_text_embed_many(texts: list[str]) -> list[list[float]]:
-    """Embed each text via the legacy /api/embeddings endpoint IN PARALLEL.
-
-    The previous version was sequential — when a single batch fell back to
-    per-text mode, that worker stalled on N sequential 100ms calls instead
-    of running them in parallel. This recovers the lost throughput.
-    """
+def _per_text_embed_many(texts: list[str], model: Optional[str] = None) -> list[list[float]]:
+    """Embed each text via the legacy /api/embeddings endpoint IN PARALLEL."""
     if not texts:
         return []
+    model = model or settings.EMBED_MODEL
+    dim = _get_vector_dim(model)
     out: list[Optional[list[float]]] = [None] * len(texts)
     # Use a small pool so we don't crush Ollama with 8 workers × N texts each
     inner_workers = min(len(texts), 4)
     with ThreadPoolExecutor(max_workers=inner_workers) as pool:
-        futures = {pool.submit(_ollama_embed, t): idx for idx, t in enumerate(texts)}
+        futures = {pool.submit(_ollama_embed, t, model=model): idx for idx, t in enumerate(texts)}
         for future in as_completed(futures):
             idx = futures[future]
             try:
                 out[idx] = future.result()
             except Exception as ee:
                 print(f"   ⚠️ Per-text embed failed: {ee}")
-                out[idx] = [0.0] * 768
-    return [v if v is not None else [0.0] * 768 for v in out]
+                out[idx] = [0.0] * dim
+    return [v if v is not None else [0.0] * dim for v in out]
 
 
-def _ollama_embed_batch(texts: list[str], retries: int = 2) -> list[list[float]]:
+def _ollama_embed_batch(texts: list[str], retries: int = 2, model: Optional[str] = None) -> list[list[float]]:
     """Embed many texts in ONE Ollama call via /api/embed.
 
     Throughput unlock: one HTTP request returns N embeddings, amortising
@@ -275,13 +287,15 @@ def _ollama_embed_batch(texts: list[str], retries: int = 2) -> list[list[float]]
 
     session = _get_session()
 
-    # Honor the env override and previous run-time decisions
-    global _supports_batch_endpoint
-    if settings.DISABLE_BATCH_EMBED or _supports_batch_endpoint is False:
-        embeds = _per_text_embed_many(cleaned)
-        return _interleave_zero_for_empties(embeds, placeholders)
+    model = model or settings.EMBED_MODEL
+    dim = _get_vector_dim(model)
 
-    payload = {"model": settings.EMBED_MODEL, "input": cleaned, "keep_alive": -1}
+    # Honor the env override and previous run-time decisions
+    if settings.DISABLE_BATCH_EMBED or _supports_batch_endpoint.get(model) is False:
+        embeds = _per_text_embed_many(cleaned, model=model)
+        return _interleave_zero_for_empties(embeds, placeholders, dim=dim)
+
+    payload = {"model": model, "input": cleaned}
 
     for attempt in range(retries):
         try:
@@ -294,18 +308,18 @@ def _ollama_embed_batch(texts: list[str], retries: int = 2) -> list[list[float]]
             # 404 = endpoint genuinely missing → permanently disable (will never work)
             if resp.status_code == 404:
                 _disable_batch_endpoint("endpoint not available (404). "
-                                        "Upgrade Ollama (`brew upgrade ollama`).")
-                embeds = _per_text_embed_many(cleaned)
-                return _interleave_zero_for_empties(embeds, placeholders)
+                                        "Upgrade Ollama (`brew upgrade ollama`).", model=model)
+                embeds = _per_text_embed_many(cleaned, model=model)
+                return _interleave_zero_for_empties(embeds, placeholders, dim=dim)
 
             # 400 / 500 = could be content-specific. Halve to isolate the bad text.
             if resp.status_code in (400, 500):
                 if len(cleaned) > 1:
                     mid = len(cleaned) // 2
-                    left = _ollama_embed_batch(cleaned[:mid], retries=1)
-                    right = _ollama_embed_batch(cleaned[mid:], retries=1)
+                    left = _ollama_embed_batch(cleaned[:mid], retries=1, model=model)
+                    right = _ollama_embed_batch(cleaned[mid:], retries=1, model=model)
                     embeds = left + right
-                    return _interleave_zero_for_empties(embeds, placeholders)
+                    return _interleave_zero_for_empties(embeds, placeholders, dim=dim)
                 # Single text still 400/500 — _ollama_embed handles context-length
                 # errors via progressive halving, so the legacy fallback can recover
                 # texts that the batch endpoint refuses.
@@ -313,70 +327,65 @@ def _ollama_embed_batch(texts: list[str], retries: int = 2) -> list[list[float]]
                 if attempt == 0 and not _is_context_length_error(body):
                     print(f"   ⚠️ Single-text batch returned {resp.status_code}: "
                           f"{body!r} — falling back to /api/embeddings")
-                embeds = _per_text_embed_many(cleaned)
-                return _interleave_zero_for_empties(embeds, placeholders)
+                embeds = _per_text_embed_many(cleaned, model=model)
+                return _interleave_zero_for_empties(embeds, placeholders, dim=dim)
 
             resp.raise_for_status()
             data = resp.json()
 
-            if _supports_batch_endpoint is None:
+            if _supports_batch_endpoint.get(model) is None:
                 with _supports_batch_lock:
-                    if _supports_batch_endpoint is None:
-                        _supports_batch_endpoint = True
+                    if _supports_batch_endpoint.get(model) is None:
+                        _supports_batch_endpoint[model] = True
 
             embeddings = data.get("embeddings") or data.get("embedding") or []
             if not embeddings or len(embeddings) != len(cleaned):
                 raise RuntimeError(
                     f"Batch returned {len(embeddings)} vectors for {len(cleaned)} texts"
                 )
-            return _interleave_zero_for_empties(embeddings, placeholders)
+            return _interleave_zero_for_empties(embeddings, placeholders, dim=dim)
 
         except Exception as e:
             if attempt < retries - 1:
                 time.sleep(1.0 * (attempt + 1))
                 continue
             print(f"   ⚠️ Batch embed errored ({e}) — per-text fallback (this batch only)")
-            embeds = _per_text_embed_many(cleaned)
-            return _interleave_zero_for_empties(embeds, placeholders)
+            embeds = _per_text_embed_many(cleaned, model=model)
+            return _interleave_zero_for_empties(embeds, placeholders, dim=dim)
 
-    return [[0.0] * 768 for _ in texts]
+    return [[0.0] * dim for _ in texts]
 
 
 def _interleave_zero_for_empties(
-    embeddings: list[list[float]], placeholders: list[bool]
+    embeddings: list[list[float]], placeholders: list[bool], dim: int = 768
 ) -> list[list[float]]:
-    """Re-insert zero vectors for the input slots that were empty/whitespace.
-
-    ``placeholders[i] is True`` means the i-th input was filtered out before
-    sending — we plug a 768-d zero vector back so the caller's array layout
-    stays in sync with the original ``texts`` list.
-    """
+    """Re-insert zero vectors for the input slots that were empty/whitespace."""
     if not any(placeholders):
         return embeddings
     out: list[list[float]] = []
     iter_real = iter(embeddings)
     for is_empty in placeholders:
         if is_empty:
-            out.append([0.0] * 768)
+            out.append([0.0] * dim)
         else:
             try:
                 out.append(next(iter_real))
             except StopIteration:
-                out.append([0.0] * 768)
+                out.append([0.0] * dim)
     return out
 
 
-def embed_texts(texts: list[str]) -> list[list[float]]:
+def embed_texts(texts: list[str], model: Optional[str] = None) -> list[list[float]]:
     """Generate embeddings for a list of texts via Ollama (sequential to avoid overloading)."""
     results = []
     for text in texts:
-        results.append(_ollama_embed(text))
+        results.append(_ollama_embed(text, model=model))
     return results
 
 
-def embed_query(query: str) -> list[float]:
+def embed_query(query: str, model: Optional[str] = None) -> list[float]:
     """Embed a single query for retrieval."""
-    return _ollama_embed(query)
+    return _ollama_embed(query, model=model)
 
 
 def embed_and_store(
@@ -384,6 +393,7 @@ def embed_and_store(
     collection,
     repo_name: str = "",
     progress_callback=None,
+    embed_model: Optional[str] = None,
 ):
     """Embed chunks via Ollama batched-API and upsert to ChromaDB.
 
@@ -408,7 +418,7 @@ def embed_and_store(
 
     # Load the model BEFORE starting parallel workers — several Ollama versions
     # return 400 when concurrent requests arrive while the model is cold-loading.
-    _warm_up_embed_model()
+    _warm_up_embed_model(embed_model)
 
     chroma_batch_size = 256                                  # rows per Chroma upsert
     sub_batch_size = max(1, settings.EMBED_BATCH_SIZE)       # texts per Ollama call
@@ -427,7 +437,10 @@ def embed_and_store(
         for c in batch:
             source = c.get("source", "unknown").replace("\\", "/")
             chunk_idx = c.get("chunk_index", 0)
-            doc_id = f"{repo_name}__{source}__{chunk_idx}"
+            branch = c.get("branch", "")
+            # Include branch in ID to allow different versions of the same file across branches
+            branch_part = f"{branch}__" if branch else ""
+            doc_id = f"{repo_name}__{branch_part}{source}__{chunk_idx}"
             if len(doc_id) > 512:
                 doc_id = hashlib.md5(doc_id.encode()).hexdigest()
             ids.append(doc_id)
@@ -443,7 +456,7 @@ def embed_and_store(
 
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {
-                pool.submit(_ollama_embed_batch, sb): idx
+                pool.submit(_ollama_embed_batch, sb, 2, embed_model): idx
                 for idx, sb in enumerate(sub_batches)
             }
             for future in as_completed(futures):
@@ -468,8 +481,9 @@ def embed_and_store(
             embeddings.extend(sb_emb or [])
 
         # Defensive: pad / trim to match documents in case of partial failures
+        dim = _get_vector_dim(embed_model or settings.EMBED_MODEL)
         if len(embeddings) < len(documents):
-            embeddings.extend([[0.0] * 768] * (len(documents) - len(embeddings)))
+            embeddings.extend([[0.0] * dim] * (len(documents) - len(embeddings)))
         elif len(embeddings) > len(documents):
             embeddings = embeddings[:len(documents)]
 

@@ -247,13 +247,25 @@ def walk_files(repo_path: str) -> list[dict]:
     return files
 
 
-def list_local_branch_names(repo_path: str) -> list[str]:
-    """Names of local branches in a cloned repo."""
+def list_all_branch_names(repo_path: str) -> list[str]:
+    """Names of all branches (local + remote) in a cloned repo."""
     if git is None:
         return []
     try:
         repo = git.Repo(repo_path)
-        return [b.name for b in repo.branches]
+        names = set()
+        # Local
+        for b in repo.branches:
+            names.add(b.name)
+        # Remote
+        try:
+            for ref in repo.remote().refs:
+                name = ref.name.replace("origin/", "")
+                if name != "HEAD":
+                    names.add(name)
+        except Exception:
+            pass
+        return sorted(list(names))
     except Exception:
         return []
 

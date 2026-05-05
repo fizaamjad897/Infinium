@@ -46,13 +46,27 @@ async def list_repos():
 
 @router.get("/{repo_name}/status")
 async def repo_status(repo_name: str):
-    """Get detailed status for a specific repository."""
-    status = get_ingestion_status(repo_name)
+    """Get detailed status for a specific repository (main ingestion)."""
+    status = get_ingestion_status(repo_name, scope="repo")
     stats = get_collection_stats(repo_name)
     
     return {
         **status,
         "repo_name": repo_name,
+        "chunks_in_db": stats.get("chunks", 0),
+    }
+
+
+@router.get("/{repo_name}/branches/status")
+async def branch_status(repo_name: str):
+    """Get status for branch-specific ingestion of a repository."""
+    status = get_ingestion_status(repo_name, scope="branches")
+    stats = get_collection_stats(repo_name)
+    
+    return {
+        **status,
+        "repo_name": repo_name,
+        "scope": "branches",
         "chunks_in_db": stats.get("chunks", 0),
     }
 
@@ -114,51 +128,60 @@ async def list_all_collections():
 
 @router.get("/{repo_name}/status/stream")
 async def stream_status(repo_name: str):
-    """Server-Sent Events stream of ingestion status updates.
-
-    Emits one JSON event per second until the status reaches ``complete`` or
-    ``error``, plus an immediate first event so the client gets a baseline.
-
-    Drop-in for the Node.js backend / dashboard:
-    ```js
-    const es = new EventSource('/api/repos/my-repo/status/stream');
-    es.onmessage = e => console.log(JSON.parse(e.data));
-    es.addEventListener('done', () => es.close());
-    ```
-    """
-    async def event_gen():
-        last_payload: str = ""
-        terminal_states = {"complete", "error", "unknown"}
-        # Hard cap so an SSE client can't park forever
-        deadline = time.time() + 60 * 60   # 1 hour
-        while time.time() < deadline:
-            status = get_ingestion_status(repo_name)
-            stats = get_collection_stats(repo_name)
-            payload = {
-                **status,
-                "repo_name": repo_name,
-                "chunks_in_db": stats.get("chunks", 0),
-            }
-            text = json.dumps(payload, default=str)
-            # Only emit when something changed (saves bandwidth)
-            if text != last_payload:
-                yield f"data: {text}\n\n"
-                last_payload = text
-            if status.get("status") in terminal_states:
-                yield "event: done\ndata: {}\n\n"
-                return
-            await asyncio.sleep(1.0)
-        yield "event: timeout\ndata: {\"reason\":\"deadline_exceeded\"}\n\n"
-
+    """SSE stream for main ingestion status."""
     return StreamingResponse(
-        event_gen(),
+        _status_event_generator(repo_name, scope="repo"),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",   # tell nginx not to buffer
+            "X-Accel-Buffering": "no",
             "Connection": "keep-alive",
         },
     )
+
+
+@router.get("/{repo_name}/branches/status/stream")
+async def stream_branch_status(repo_name: str):
+    """SSE stream for branch-specific ingestion status."""
+    return StreamingResponse(
+        _status_event_generator(repo_name, scope="branches"),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+async def _status_event_generator(repo_name: str, scope: str = "repo"):
+    """Internal SSE generator shared by main and branch streams."""
+    last_payload: str = ""
+    terminal_states = {"complete", "error", "unknown"}
+    deadline = time.time() + 60 * 60   # 1 hour
+    
+    while time.time() < deadline:
+        status = get_ingestion_status(repo_name, scope=scope)
+        stats = get_collection_stats(repo_name)
+        payload = {
+            **status,
+            "repo_name": repo_name,
+            "scope": scope,
+            "chunks_in_db": stats.get("chunks", 0),
+        }
+        text = json.dumps(payload, default=str)
+        
+        if text != last_payload:
+            yield f"data: {text}\n\n"
+            last_payload = text
+            
+        if status.get("status") in terminal_states:
+            yield "event: done\ndata: {}\n\n"
+            return
+            
+        await asyncio.sleep(1.0)
+    
+    yield "event: timeout\ndata: {\"reason\":\"deadline_exceeded\"}\n\n"
 
 
 # ── Pre-ingest size estimate ──

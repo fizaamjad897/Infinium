@@ -51,10 +51,15 @@ def mmr_select(
             # MMR score: λ·sim(q, c) - (1-λ)·max_sim(c, selected)
             def mmr_score(c: dict) -> float:
                 rel = c.get("relevance", 0.0)
-                # Approximate inter-chunk similarity using overlap of source + text prefix
+                # Approximate inter-chunk similarity
+                # For code chunks: penalize similar text prefixes
+                # For metadata chunks (branch/commit): penalize less so we can see multiple branches
+                is_meta = c.get("type") in {"branch", "commit", "commit_diff"}
+                penalty_weight = 0.2 if is_meta else 1.0
+                
                 max_sim = max(
-                    1.0 if c["text"][:80] == s["text"][:80] else
-                    0.5 if c.get("source") == s.get("source") else 0.0
+                    (1.0 if c["text"][:80] == s["text"][:80] else
+                     0.5 if c.get("source") == s.get("source") else 0.0) * penalty_weight
                     for s in selected
                 )
                 return lambda_mult * rel - (1 - lambda_mult) * max_sim

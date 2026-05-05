@@ -1,11 +1,13 @@
 """
-Ingestion API Routes — strictly separated by repo visibility (FR-004 / FR-005).
+Ingestion API Routes
 
-  POST /api/ingest/private   → clone-based ingestion of PRIVATE repos (auth required)
-  POST /api/ingest/local     → ingest a local folder (no GitHub round-trip)
-  POST /api/webhook/github   → incremental sync from GitHub webhooks (FR-005)
+  POST /api/ingest/repo      → Combined private/public repo ingestion
+  POST /api/ingest/branches  → Ingest all branches of a repo (faster embed model)
+  POST /api/ingest/private   → Clone-based ingestion of PRIVATE repos (auth required)
+  POST /api/ingest/local     → Ingest a local folder (no GitHub round-trip)
+  POST /api/webhook/github   → Incremental sync from GitHub webhooks (FR-005)
 
-Public-repo ingestion lives in ``routes/remote.py`` at /api/ingest/public.
+Public-repo ingestion also available at /api/ingest/public (routes/remote.py).
 """
 import os
 import re
@@ -53,14 +55,21 @@ async def _is_repo_private(repo_url: str, token: Optional[str]) -> Optional[bool
 
 # ── Private-repo ingestion (auth required) ──
 
-@router.post("/ingest/private", response_model=IngestResponse)
-async def ingest_private_repo(
+# ── Unified repo ingestion (private/public) ──
+
+@router.post("/ingest/repo", response_model=IngestResponse)
+async def ingest_repo(
     req: IngestRequest,
     background_tasks: BackgroundTasks,
     x_github_token: Optional[str] = Header(None),
     x_user_login: Optional[str] = Header(None),
     current_user: Optional[dict] = Depends(get_current_user_optional),
 ):
+    """Ingest a GitHub repository (private or public).
+    
+    If no branch is specified, it will default to the repository's primary branch (main/master).
+    For private repos, authentication is required via X-GitHub-Token header or session.
+    """
     github_token = x_github_token
     user_login = x_user_login or ""
     
@@ -69,36 +78,122 @@ async def ingest_private_repo(
         github_token = user.get("access_token") if user else None
         user_login = user_login or current_user.get("login", "")
 
-    if not github_token:
-        raise HTTPException(
-            status_code=401,
-            detail="Auth required for private-repo ingestion. Supply 'X-GitHub-Token' header."
-        )
-
-    # Check visibility but DON'T REJECT - just log it
+    # Detect visibility
     is_private = await _is_repo_private(req.repo_url, github_token)
-    if is_private is False:
-        print(f"   🌍 Public repo detected for {req.repo_name} — will index without auth (token will be ignored)")
-    else:
+    
+    if is_private:
+        if not github_token:
+            raise HTTPException(
+                status_code=401,
+                detail="Private repository detected. Authentication required. Supply 'X-GitHub-Token' header."
+            )
         print(f"   🔒 Private repo detected for {req.repo_name}")
-
-    print(f"   🔑 Token resolved for {req.repo_name}")
-
-    background_tasks.add_task(
-        ingest_repository,
-        repo_url=req.repo_url,
-        repo_name=req.repo_name,
-        branch=req.branch,
-        github_token=github_token,  # Will be ignored for public repos
-        ingested_by=user_login,
-        callback_url=req.callback_url or "",
-    )
+        # Use clone-based ingestion for private repos
+        background_tasks.add_task(
+            ingest_repository,
+            repo_url=req.repo_url,
+            repo_name=req.repo_name,
+            branch=req.branch,
+            github_token=github_token,
+            ingested_by=user_login,
+            callback_url=req.callback_url or "",
+            status_scope="repo",
+            embed_model=settings.EMBED_MODEL,
+        )
+    else:
+        print(f"   🌍 Public repo detected for {req.repo_name}")
+        # Use remote API ingestion for public repos
+        from backend.ingestion.pipeline import ingest_remote_url
+        background_tasks.add_task(
+            ingest_remote_url,
+            repo_url=req.repo_url,
+            repo_name=req.repo_name,
+            branch=req.branch,
+            branches=req.branches,
+            github_token=github_token or settings.GITHUB_API_TOKEN,
+            ingested_by=user_login,
+            callback_url=req.callback_url or "",
+            status_scope="repo",
+            embed_model=settings.EMBED_MODEL,
+        )
 
     branch_msg = f"branch '{req.branch}'" if req.branch else "default branch"
     return IngestResponse(
         status="ingestion_started",
         repo_name=req.repo_name,
         message=f"Background ingestion started for {req.repo_name} ({branch_msg}).",
+    )
+
+# Route moved and unified above
+
+# ── All branches ingestion ──
+
+@router.post("/ingest/branches", response_model=IngestResponse)
+async def ingest_all_branches(
+    req: IngestRequest,
+    background_tasks: BackgroundTasks,
+    x_github_token: Optional[str] = Header(None),
+    x_user_login: Optional[str] = Header(None),
+    current_user: Optional[dict] = Depends(get_current_user_optional),
+):
+    """Ingest all branches of a GitHub repository.
+    
+    This endpoint always indexes every branch it can fetch for the repo.
+    Any branch value supplied in the payload is ignored.
+    It works for both public and private repos.
+    Status is tracked separately as 'branches_ingestion'.
+    """
+    github_token = x_github_token
+    user_login = x_user_login or ""
+    
+    if not github_token and current_user:
+        user = user_store.get_user(current_user["github_id"])
+        github_token = user.get("access_token") if user else None
+        user_login = user_login or current_user.get("login", "")
+
+    # Check if repo is private
+    is_private = await _is_repo_private(req.repo_url, github_token)
+    
+    if is_private:
+        if not github_token:
+            raise HTTPException(
+                status_code=401,
+                detail="Private repository detected. Authentication required. Supply 'X-GitHub-Token' header."
+            )
+        print(f"   🔒 Private repo detected for {req.repo_name} — ingesting all branches")
+    else:
+        print(f"   🌍 Public repo detected for {req.repo_name} — ingesting all branches")
+
+    # Fetch all branches (branch in payload is ignored)
+    from backend.ingestion.github_loader import fetch_all_remote_branches, list_all_branch_names
+    import os
+    dest = os.path.join(settings.REPO_CACHE_DIR, req.repo_name.replace("/", "_"))
+    
+    # Clone repo to get all branches
+    from backend.ingestion.github_loader import clone_repo
+    path = clone_repo(req.repo_url, dest, github_token=github_token)
+    fetch_all_remote_branches(path)
+    all_branches = list_all_branch_names(path)
+    
+    print(f"   🌿 Found {len(all_branches)} branches: {all_branches[:10]}{'...' if len(all_branches) > 10 else ''}")
+
+    # Use clone-based ingestion with all branches and the faster embed model
+    background_tasks.add_task(
+        ingest_repository,
+        repo_url=req.repo_url,
+        repo_name=req.repo_name,
+        branches=all_branches,
+        github_token=github_token,
+        ingested_by=user_login,
+        callback_url=req.callback_url or "",
+        embed_model=settings.BRANCH_EMBED_MODEL,
+        status_scope="branches",
+    )
+
+    return IngestResponse(
+        status="branches_ingestion_started",
+        repo_name=req.repo_name,
+        message=f"Background ingestion started for all {len(all_branches)} branches of {req.repo_name} using {settings.BRANCH_EMBED_MODEL}.",
     )
 
 # ── Local-folder ingestion ──
