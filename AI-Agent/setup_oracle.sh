@@ -3,9 +3,10 @@ set -e
 
 echo "🚀 Starting Oracle Cloud Setup for Infinium AI Agent..."
 
-# Detect Package Manager
+# Detect Package Manager and OS
 if command -v dnf &> /dev/null; then
     PM="dnf"
+    DISTRO=$(grep "^ID=" /etc/os-release | cut -d'=' -f2 | tr -d '"')
 elif command -v apt-get &> /dev/null; then
     PM="apt"
 else
@@ -13,12 +14,12 @@ else
     exit 1
 fi
 
-echo "📦 Using package manager: $PM"
+echo "📦 Using package manager: $PM (Distro: $DISTRO)"
 
 # 1. Update and install basics
 if [ "$PM" == "dnf" ]; then
     sudo dnf update -y
-    sudo dnf install -y curl git
+    sudo dnf install -y curl git yum-utils
 else
     sudo apt-get update
     sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common git
@@ -27,15 +28,21 @@ fi
 # 2. Install Docker
 if ! command -v docker &> /dev/null; then
     echo "🐳 Installing Docker..."
-    curl -fsSL https://get.docker.com -o get-docker.sh
-    sudo sh get-docker.sh
+    if [ "$DISTRO" == "ol" ]; then
+        echo "🔧 Configuring Docker for Oracle Linux..."
+        sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+        sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    else
+        curl -fsSL https://get.docker.com -o get-docker.sh
+        sudo sh get-docker.sh
+    fi
     sudo systemctl enable --now docker
     sudo usermod -aG docker $USER
 fi
 
-# 3. Install Docker Compose
+# 3. Install Docker Compose (if plugin not enough)
 if ! command -v docker-compose &> /dev/null; then
-    echo "🐙 Installing Docker Compose..."
+    echo "🐙 Installing Docker Compose Standalone..."
     sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
     sudo chmod +x /usr/local/bin/docker-compose
 fi
