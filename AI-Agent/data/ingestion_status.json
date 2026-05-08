@@ -50,23 +50,23 @@
     "elapsed_seconds": 35.6
   },
   "Infinium-BE": {
-    "status": "complete",
-    "updated_at": "2026-05-05T23:44:13.149815",
+    "status": "completed",
+    "updated_at": "2026-05-09T01:18:20.377070",
     "repo_url": "https://github.com/fizaamjad897/Infinium-BE.git",
-    "chunks_stored": 94,
+    "chunks_stored": 95,
     "files_processed": 30,
     "commits_processed": 8,
-    "total_chunks": 94,
-    "elapsed_seconds": 23.5,
+    "total_chunks": 95,
+    "elapsed_seconds": 22.2,
     "scope": "repo",
     "source": "remote_url",
     "ingested_by": "",
-    "chunks_processed": 94,
-    "chunks_total": 94,
+    "chunks_processed": 95,
+    "chunks_total": 95,
     "percent_complete": 100.0,
-    "embed_rate_per_sec": 4.93,
+    "embed_rate_per_sec": 5.45,
     "eta_seconds": 0,
-    "branches_processed": 1,
+    "branches_processed": 2,
     "branches_indexed": [
       "main"
     ],
@@ -478,5 +478,13 @@
     "total_chunks": 111,
     "elapsed_seconds": 28.4,
     "ingested_branch": "multi"
+  },
+  "Infinium-BE:branches": {
+    "status": "error",
+    "updated_at": "2026-05-08T01:29:50.473646",
+    "scope": "branches",
+    "repo_url": "https://github.com/fizaamjad897/Infinium-BE.git",
+    "ingested_by": "",
+    "error": "name 'threading' is not defined"
   }
 }

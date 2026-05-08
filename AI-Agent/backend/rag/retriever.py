@@ -10,6 +10,7 @@ from typing import Optional
 from backend.ingestion.embedder import get_chroma_collection, embed_query
 from backend.config import settings
 import math
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 def _cosine_sim(a: list[float], b: list[float]) -> float:
@@ -157,23 +158,33 @@ def retrieve_multi_repo(
     threshold: float = None,
     chunk_types: Optional[list[str]] = None,
 ) -> list[dict]:
-    """Retrieve and merge context from multiple repos with MMR across all."""
+    """Retrieve and merge context from multiple repos with MMR across all.
+    
+    Uses parallel execution for multi-repo retrieval to minimize latency.
+    """
     top_k = top_k or settings.RAG_TOP_K
     threshold = threshold or settings.RELEVANCE_THRESHOLD
 
     all_chunks = []
-    for repo_name in repo_names:
+    
+    def _safe_retrieve(repo):
         try:
-            # Fetch more per-repo so global MMR has candidates to work with
-            chunks = retrieve_context(
-                query, repo_name,
+            return retrieve_context(
+                query, repo,
                 top_k=top_k,
                 threshold=threshold,
                 chunk_types=chunk_types,
             )
-            all_chunks.extend(chunks)
         except Exception as e:
-            print(f"   ⚠️ Error retrieving from {repo_name}: {e}")
+            print(f"   ⚠️ Error retrieving from {repo}: {e}")
+            return []
+
+    # Parallelize per-repo retrieval
+    workers = min(len(repo_names), settings.RETRIEVAL_WORKERS)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(_safe_retrieve, repo) for repo in repo_names]
+        for future in as_completed(futures):
+            all_chunks.extend(future.result())
 
     all_chunks.sort(key=lambda x: x["relevance"], reverse=True)
     # Apply global MMR across all repos
@@ -238,22 +249,33 @@ def hybrid_retrieve_multi_repo(
     keyword_weight: float = 0.35,
     chunk_types: Optional[list[str]] = None,
 ) -> list[dict]:
-    """Hybrid search across multiple repos with global MMR."""
+    """Hybrid search across multiple repos with global MMR.
+    
+    Uses parallel execution for hybrid retrieval to minimize latency.
+    """
     top_k = top_k or settings.RAG_TOP_K
 
     all_chunks = []
-    for repo_name in repo_names:
+    
+    def _safe_hybrid_retrieve(repo):
         try:
-            chunks = hybrid_retrieve(
-                query, repo_name,
+            return hybrid_retrieve(
+                query, repo,
                 top_k=top_k,
                 semantic_weight=semantic_weight,
                 keyword_weight=keyword_weight,
                 chunk_types=chunk_types,
             )
-            all_chunks.extend(chunks)
         except Exception as e:
-            print(f"   ⚠️ Error in hybrid retrieve from {repo_name}: {e}")
+            print(f"   ⚠️ Error in hybrid retrieve from {repo}: {e}")
+            return []
+
+    # Parallelize per-repo hybrid retrieval
+    workers = min(len(repo_names), settings.RETRIEVAL_WORKERS)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(_safe_hybrid_retrieve, repo) for repo in repo_names]
+        for future in as_completed(futures):
+            all_chunks.extend(future.result())
 
     all_chunks.sort(key=lambda x: x.get("combined_score", x["relevance"]), reverse=True)
     return mmr_select([], all_chunks, top_k)

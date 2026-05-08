@@ -19,7 +19,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 4G
+          memory: 512M
     restart: always
 
   ollama:
@@ -29,7 +29,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 8G
+          memory: 2G
     restart: always
 
   postgres:
@@ -37,5 +37,5 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
+          memory: 256M
     restart: always

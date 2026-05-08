@@ -63,11 +63,15 @@ class Settings(BaseSettings):
     # ── Embedding throughput ──
     # We batch many texts into a single Ollama /api/embed call (the newer
     # batch endpoint), then run several batches in parallel.
-    EMBED_BATCH_SIZE: int = 12          # Increased for better throughput
-    EMBED_WORKERS: int = 4             # Reduced to prevent resource contention on Mac
+    EMBED_BATCH_SIZE: int = 4          # Reduced for 1GB RAM stability
+    EMBED_WORKERS: int = 1             # Reduced for 1GB RAM stability (prevent OOM)
     EMBED_PROGRESS_EVERY: int = 50     # status update every N chunks during embedding
     # Set to true to skip the batch endpoint and go straight to per-text.
     DISABLE_BATCH_EMBED: bool = False
+
+    # ── Retrieval throughput ──
+    # For multi-repo queries, we run retrieval tasks in parallel.
+    RETRIEVAL_WORKERS: int = 4
 
     # ── Conversation ──
     MAX_CONVERSATION_TURNS: int = 10

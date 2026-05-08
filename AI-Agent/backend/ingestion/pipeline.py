@@ -9,8 +9,10 @@ from __future__ import annotations
 import os
 import json
 import time
+import threading
 from datetime import datetime
 from typing import Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import hashlib
 from backend.ingestion.github_loader import (
@@ -30,41 +32,39 @@ STATUS_FILE = os.path.join(settings.DATA_DIR, "ingestion_status.json")
 
 
 def _walk_files_multi_branch(repo_path: str, branches: list[str]) -> list[dict]:
-    """Walk files at each branch, dedupe by content hash so unchanged files
+    """Walk files at each branch in parallel, dedupe by content hash so unchanged files
     across branches are only embedded once.
-
-    Strategy:
-      - For every branch, checkout + walk → collect files
-      - Hash each file's content (sha1 of bytes)
-      - If we've seen the hash before, *append* the branch to that file's
-        ``branches`` list instead of duplicating the file
-      - Final files list includes ``branches`` (CSV string for ChromaDB
-        metadata compatibility) + first branch as ``branch``
-
-    For a 5-branch repo where 90% of files are identical across branches,
-    this is ~10× cheaper than naive per-branch indexing.
     """
     seen: dict[str, dict] = {}    # sha1(content) → file_dict
     branch_file_counts: dict[str, int] = {}
+    lock = threading.Lock()       # for protecting the 'seen' dict
 
-    for branch in branches:
-        files = walk_files_at_branch(repo_path, branch)
-        branch_file_counts[branch] = len(files)
-        print(f"   🌿 Branch '{branch}': {len(files)} files")
-        for f in files:
-            h = hashlib.sha1(f["content"].encode("utf-8", errors="ignore")).hexdigest()
-            if h in seen:
-                existing = seen[h]
-                if branch not in existing["branches_list"]:
-                    existing["branches_list"].append(branch)
-            else:
-                f["branches_list"] = [branch]
-                seen[h] = f
+    def _process_branch(branch):
+        print(f"   🌿 Scanning branch '{branch}'...")
+        branch_files = walk_files_at_branch(repo_path, branch)
+        return branch, branch_files
+
+    # Parallelize branch scanning
+    workers = min(len(branches), 8)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(_process_branch, b) for b in branches]
+        for future in as_completed(futures):
+            branch, files = future.result()
+            branch_file_counts[branch] = len(files)
+            
+            with lock:
+                for f in files:
+                    h = hashlib.sha1(f["content"].encode("utf-8", errors="ignore")).hexdigest()
+                    if h in seen:
+                        existing = seen[h]
+                        if branch not in existing["branches_list"]:
+                            existing["branches_list"].append(branch)
+                    else:
+                        f["branches_list"] = [branch]
+                        seen[h] = f
 
     deduped: list[dict] = []
     for h, f in seen.items():
-        # Pin "branch" to the first branch we saw it on (for back-compat),
-        # plus a CSV string of every branch it appears on.
         f["branch"] = f["branches_list"][0]
         f["branches"] = ",".join(f["branches_list"])
         deduped.append(f)
