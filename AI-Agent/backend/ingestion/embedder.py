@@ -75,8 +75,9 @@ def _warm_up_embed_model(model: Optional[str] = None) -> None:
                 json={
                     "model": model,
                     "input": "warmup",
+                    "keep_alive": -1,
                 },
-                timeout=120,
+                timeout=settings.EMBED_HTTP_TIMEOUT,
             )
             if resp.status_code == 200:
                 _supports_batch_endpoint[model] = True
@@ -95,8 +96,8 @@ def _warm_up_embed_model(model: Optional[str] = None) -> None:
         try:
             resp = session.post(
                 f"{settings.OLLAMA_BASE_URL}/api/embeddings",
-                json={"model": model, "prompt": "warmup"},
-                timeout=120,
+                json={"model": model, "prompt": "warmup", "keep_alive": -1},
+                timeout=settings.EMBED_HTTP_TIMEOUT,
             )
             if resp.status_code == 200:
                 print(f"   🔥 Pinned {model} via /api/embeddings (keep_alive: -1)")

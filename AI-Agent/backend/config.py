@@ -95,6 +95,9 @@ class Settings(BaseSettings):
     EMBED_PROGRESS_EVERY: int = 50     # status update every N chunks during embedding
     # Set to true to skip the batch endpoint and go straight to per-text.
     DISABLE_BATCH_EMBED: bool = False
+    # HTTP timeout for any single Ollama call. Bump if remote Ollama is slow
+    # under load, or if you're routing through a tunnel.
+    EMBED_HTTP_TIMEOUT: int = 300
 
     # ── Retrieval throughput ──
     # For multi-repo queries, we run retrieval tasks in parallel.

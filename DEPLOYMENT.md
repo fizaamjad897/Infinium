@@ -157,7 +157,7 @@ USE_DUAL_MODEL=false
 # Authorization callback URL:  https://api.infinium.io/api/auth/github/callback
 GITHUB_CLIENT_ID=Iv1.xxxxxxxxxxxxxxxx
 GITHUB_CLIENT_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-GITHUB_REDIRECT_URI=https://api.infinium.io/api/auth/github/callback
+=https://api.infinium.io/api/auth/github/callback
 
 # ── JWT — MUST be a strong random secret in production ──
 JWT_SECRET=<openssl rand -hex 64>
