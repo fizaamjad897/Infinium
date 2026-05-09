@@ -6,6 +6,9 @@ version: "3.9"
 
 services:
   backend:
+    depends_on:
+      - ollama
+      - postgres
     environment:
       - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
       - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
@@ -16,11 +19,6 @@ services:
       - CODE_REASONING_MODEL=${CODE_REASONING_MODEL:-kimi-k2.5:cloud}
       - EMBED_MODEL=${EMBED_MODEL:-mxbai-embed-large}
       - USE_DUAL_MODEL=${USE_DUAL_MODEL:-false}
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
     deploy:
       resources:
         limits:
@@ -29,8 +27,13 @@ services:
 
   ollama:
     environment:
-      - OLLAMA_NUM_PARALLEL=4
-      - OLLAMA_MAX_LOADED_MODELS=4
+      - OLLAMA_NUM_PARALLEL=1
+      - OLLAMA_MAX_LOADED_MODELS=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
     deploy:
       resources:
         limits:
@@ -38,7 +41,7 @@ services:
     restart: always
 
   postgres:
-    command: postgres -c shared_buffers=512MB -c max_connections=100
+    command: postgres -c shared_buffers=64MB -c max_connections=50
     deploy:
       resources:
         limits:
