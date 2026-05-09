@@ -32,8 +32,18 @@ IGNORE_DIRS = {
 }
 
 
-def clone_repo(repo_url: str, dest: str, github_token: Optional[str] = None) -> str:
-    """Clone a GitHub repo or pull latest if it already exists."""
+def clone_repo(repo_url: str, dest: str, github_token: Optional[str] = None,
+               shallow_depth: int = 60) -> str:
+    """Clone a GitHub repo (shallow by default) or pull latest if it already exists.
+
+    A shallow clone with ``--depth=shallow_depth`` skips all but the most recent
+    N commits, which avoids downloading the entire history when a repo has a
+    bloated ``.git`` (e.g. binary model files in old commits). This typically
+    cuts clone time from minutes to seconds.
+
+    Set ``shallow_depth`` slightly higher than ``settings.MAX_COMMITS`` so commit
+    diff extraction still has commits to walk.
+    """
     if git is None:
         raise ImportError("gitpython is required: pip install gitpython")
 
@@ -51,9 +61,17 @@ def clone_repo(repo_url: str, dest: str, github_token: Optional[str] = None) -> 
         except Exception as e:
             print(f"   ⚠️ Pull failed (may be clean): {e}")
     else:
-        print(f"   📥 Cloning repository...")
+        print(f"   📥 Cloning repository (shallow, depth={shallow_depth})...")
         os.makedirs(os.path.dirname(dest), exist_ok=True)
-        repo = git.Repo.clone_from(repo_url, dest)
+        try:
+            repo = git.Repo.clone_from(repo_url, dest, depth=shallow_depth, single_branch=True)
+        except Exception as e:
+            # Some hosts/refs reject shallow — fall back to full clone
+            print(f"   ⚠️ Shallow clone failed ({e}); retrying full clone...")
+            import shutil
+            if os.path.exists(dest):
+                shutil.rmtree(dest, ignore_errors=True)
+            repo = git.Repo.clone_from(repo_url, dest)
 
     return dest
 
@@ -222,28 +240,48 @@ def extract_file_blame(repo_path: str, file_path: str) -> list[dict]:
 
 def walk_files(repo_path: str) -> list[dict]:
     """Walk repository and read all supported source files."""
+    from backend.config import settings
+
+    skip_patterns = [p.strip() for p in (settings.SKIP_PATH_PATTERNS or "").split(",") if p.strip()]
+    binary_exts = {e.strip().lower() for e in (settings.BINARY_EXTENSIONS or "").split(",") if e.strip()}
+
     files = []
+    skipped_by_pattern = 0
+    skipped_binary = 0
     base = Path(repo_path)
 
     for path in base.rglob("*"):
         if any(ignored in path.parts for ignored in IGNORE_DIRS):
             continue
 
-        if path.suffix.lower() in SUPPORTED_EXTENSIONS and path.is_file():
+        ext = path.suffix.lower()
+        if ext in binary_exts:
+            skipped_binary += 1
+            continue
+
+        if ext in SUPPORTED_EXTENSIONS and path.is_file():
+            rel = str(path.relative_to(base)).replace("\\", "/")
+            if any(pat in rel for pat in skip_patterns):
+                skipped_by_pattern += 1
+                continue
             try:
                 if path.stat().st_size > 500_000:
                     continue
                 content = path.read_text(encoding="utf-8", errors="ignore")
                 if content.strip():
                     files.append({
-                        "path": str(path.relative_to(base)),
+                        "path": rel,
                         "content": content,
-                        "extension": path.suffix.lower(),
+                        "extension": ext,
                         "size": len(content),
                     })
             except Exception:
                 continue
 
+    if skipped_by_pattern:
+        print(f"   🚫 Skipped {skipped_by_pattern} files via SKIP_PATH_PATTERNS")
+    if skipped_binary:
+        print(f"   🚫 Skipped {skipped_binary} binary files (models/media/archives)")
     return files
 
 

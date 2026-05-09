@@ -196,6 +196,7 @@ def ingest_repository(
     branches: Optional[list[str]] = None,
     embed_model: Optional[str] = None,
     status_scope: str = "repo",
+    discover_all_branches: bool = False,
 ) -> dict:
     """Full ingestion pipeline for a GitHub repository (cloned)."""
 
@@ -219,16 +220,25 @@ def ingest_repository(
         dest = os.path.join(settings.REPO_CACHE_DIR, repo_name.replace("/", "_"))
         print(f"   📂 Clone destination: {dest}")
         
-        path = clone_repo(repo_url, dest, github_token=github_token)
+        # Shallow clone is fine for default-branch-only flows. The all-branches
+        # endpoint needs the full history so it can checkout every branch.
+        if discover_all_branches or branches:
+            path = clone_repo(repo_url, dest, github_token=github_token, shallow_depth=0)
+        else:
+            path = clone_repo(repo_url, dest, github_token=github_token)
         print(f"   ✅ Clone successful at: {path}")
 
-        # Auto-discover branches in the background to avoid API timeouts
-        if branches is None and branch is None:
-            print(f"   🌿 No branch specified — fetching ALL remote branches...")
+        # Explicit "discover all branches" mode (used by /api/ingest/branches)
+        if discover_all_branches and branches is None and branch is None:
+            print(f"   🌿 Discovering ALL remote branches...")
             fetch_all_remote_branches(path)
             branches = list_all_branch_names(path)
             print(f"   ✅ Found {len(branches)} branches: {branches[:15]}{'...' if len(branches) > 15 else ''}")
-        
+
+        # Default: index ONLY the repo's default branch (fast path).
+        elif branches is None and branch is None:
+            print(f"   🌿 No branch specified — using default branch only (fast path)")
+
         # Make sure all remote branches are available locally before checkout
         elif branches or branch:
             print(f"   🌿 Fetching remote branches…")

@@ -35,13 +35,13 @@ class Settings(BaseSettings):
     # ── Chunking ──
     CHUNK_SIZE: int = 512         # words
     CHUNK_OVERLAP: int = 128      # words overlap (raised from 64 for better context continuity)
-    MAX_COMMITS: int = 200        # reduced: diffs are larger than plain commits
+    MAX_COMMITS: int = 50         # diffs are large; 50 is plenty for "what changed?" context
 
     # Hard cap on chunks generated per single file. Two separate caps so
     # data-heavy files (JSON/YAML) can't blow up the index, but real code
     # files are allowed many chunks (one per function/class).
-    MAX_CHUNKS_PER_CODE_FILE: int = 50      # generous — a 50-method class is fine
-    MAX_CHUNKS_PER_DATA_FILE: int = 6       # tight — n8n workflow JSONs etc.
+    MAX_CHUNKS_PER_CODE_FILE: int = 20      # one chunk per func/class up to 20 — covers real code files
+    MAX_CHUNKS_PER_DATA_FILE: int = 4       # tight — n8n workflow JSONs etc.
 
     # Use the AST/function-aware chunker for code files. False = fall back to
     # word-count chunking. Leave True for code refactoring quality.
@@ -50,6 +50,33 @@ class Settings(BaseSettings):
     # Comma-separated list of file extensions to skip during ingestion entirely.
     # Default skips lockfiles. Add e.g. ".json,.csv" via .env for data-heavy repos.
     SKIP_EXTENSIONS: str = ".lock"
+
+    # Comma-separated path-substring patterns that cause a file to be skipped.
+    # Defaults skip translated docs (FastAPI/Vue/etc), vendored code, and minified
+    # bundles — common sources of bloat that hurt ingestion time without
+    # adding retrieval value.
+    SKIP_PATH_PATTERNS: str = (
+        # translated docs
+        "docs/de/,docs/es/,docs/fr/,docs/ja/,docs/ko/,docs/pt/,"
+        "docs/ru/,docs/tr/,docs/uk/,docs/zh/,docs/zh-hant/,docs/it/,"
+        "docs/pl/,docs/nl/,docs/fa/,docs/he/,docs/hi/,docs/id/,"
+        "docs/vi/,docs/th/,docs/bn/,docs/ar/,/i18n/,/translations/,"
+        # vendored/minified/fixture noise
+        "/vendor/,/third_party/,/.min.,fixtures/,testdata/,"
+        # ML model directories — skip code that ships *with* a binary model
+        "_MODELS/,/MODELS/,/models_weights/,/checkpoints/,/pretrained/,"
+        "/weights/,/saved_models/,/.cache/huggingface/"
+    )
+
+    # Binary file extensions to never read as source. Cheap guard against
+    # accidentally reading 100MB .h5/.pt files even if they slip past
+    # SUPPORTED_EXTENSIONS.
+    BINARY_EXTENSIONS: str = (
+        ".h5,.pt,.pth,.pkl,.pickle,.onnx,.pb,.ckpt,.safetensors,"
+        ".bin,.weights,.tflite,.npy,.npz,.joblib,.model,.pmml,"
+        ".mp4,.mp3,.wav,.flac,.mov,.avi,.png,.jpg,.jpeg,.gif,"
+        ".webp,.svg,.ico,.pdf,.zip,.tar,.gz,.7z,.exe,.dll,.so,.dylib"
+    )
 
     # For data-heavy formats, use a much larger chunk size — fewer chunks
     # per file because they're rarely worth fine-grained retrieval.
@@ -63,8 +90,8 @@ class Settings(BaseSettings):
     # ── Embedding throughput ──
     # We batch many texts into a single Ollama /api/embed call (the newer
     # batch endpoint), then run several batches in parallel.
-    EMBED_BATCH_SIZE: int = 4          # Reduced for 1GB RAM stability
-    EMBED_WORKERS: int = 1             # Reduced for 1GB RAM stability (prevent OOM)
+    EMBED_BATCH_SIZE: int = 32         # texts per Ollama /api/embed call
+    EMBED_WORKERS: int = 6             # parallel batches in flight
     EMBED_PROGRESS_EVERY: int = 50     # status update every N chunks during embedding
     # Set to true to skip the batch endpoint and go straight to per-text.
     DISABLE_BATCH_EMBED: bool = False
@@ -80,7 +107,7 @@ class Settings(BaseSettings):
     # ── GitHub OAuth ──
     GITHUB_CLIENT_ID: str = ""
     GITHUB_CLIENT_SECRET: str = ""
-    GITHUB_REDIRECT_URI: str = "http://localhost:8000/api/auth/github/callback"
+    GITHUB_REDIRECT_URI: str = "http://localhost:5000/api/auth/github/callback"
 
     # ── JWT ──
     JWT_SECRET: str = "infinium-dev-secret-change-in-production"
