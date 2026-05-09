@@ -19,8 +19,6 @@ python-jose[cryptography]>=3.3.0
 # RAG improvements
 rank-bm25>=0.2.2
 
-# Embeddings (used by prototype scripts)
-sentence-transformers>=2.7.0
 
 # Environment
 python-dotenv>=1.0.0
