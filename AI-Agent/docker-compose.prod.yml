@@ -1,50 +1,23 @@
 # docker-compose.prod.yml — Production overrides
 # Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 # This file EXTENDS docker-compose.yml — run both together.
-
-version: "3.9"
+#
+# Prod runs WITHOUT a local Ollama container. Set OLLAMA_BASE_URL in .env to a
+# remote Ollama (e.g. https://<your>.trycloudflare.com pointing at your Mac).
+# The base file's `ollama` service is gated behind the "local-ollama" profile
+# and will not start unless that profile is explicitly activated.
 
 services:
   backend:
     depends_on:
       - postgres
     environment:
-      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
-      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
-      - GITHUB_REDIRECT_URI=${GITHUB_REDIRECT_URI}
       - GITHUB_API_TOKEN=${GITHUB_API_TOKEN}
-      - JWT_SECRET=${JWT_SECRET}
-      - LLM_MODEL=${LLM_MODEL:-minimax-m2.7:cloud}
-      - CODE_REASONING_MODEL=${CODE_REASONING_MODEL:-kimi-k2.5:cloud}
-      - EMBED_MODEL=${EMBED_MODEL:-mxbai-embed-large}
-      - USE_DUAL_MODEL=${USE_DUAL_MODEL:-false}
-      # Point at remote Ollama (e.g. cloudflared tunnel to a beefier machine).
-      # Falls back to in-cluster ollama:11434 if unset.
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
     deploy:
       resources:
         limits:
           memory: 768M
     restart: always
-
-  # Local Ollama disabled in prod — embeddings run on a remote Ollama via
-  # OLLAMA_BASE_URL (cloudflared tunnel to a Mac with the GPU). To re-enable
-  # in-cluster Ollama, uncomment below and add `- ollama` to backend.depends_on.
-  #
-  # ollama:
-  #   environment:
-  #     - OLLAMA_NUM_PARALLEL=1
-  #     - OLLAMA_MAX_LOADED_MODELS=1
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 10
-  #   deploy:
-  #     resources:
-  #       limits:
-  #         memory: 2G
-  #   restart: always
 
   postgres:
     command: postgres -c shared_buffers=64MB -c max_connections=50

@@ -1,9 +1,11 @@
-version: "3.9"
-
 services:
   # ── Ollama (Local/Cloud LLM Server) ──
+  # Behind the "local-ollama" profile — only starts if you explicitly enable it
+  # with: docker compose --profile local-ollama up -d
+  # Prod skips this and uses a remote Ollama via OLLAMA_BASE_URL (tunnel).
   ollama:
     image: ollama/ollama:latest
+    profiles: ["local-ollama"]
     ports:
       - "11434:11434"
     volumes:
@@ -15,10 +17,6 @@ services:
       timeout: 5s
       retries: 10
       start_period: 20s
-    # After first deploy, pull models:
-    # docker exec infinium-ollama-1 ollama pull nomic-embed-text
-    # docker exec infinium-ollama-1 ollama run minimax-m2.7:cloud
-    # docker exec infinium-ollama-1 ollama run kimi-k2.5:cloud
 
   # ── Infinium Backend (FastAPI + RAG) ──
   backend:
@@ -26,7 +24,8 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - OLLAMA_BASE_URL=http://ollama:11434
+      # Default points at in-cluster ollama; prod override sets a tunnel URL.
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
       - LLM_MODEL=${LLM_MODEL:-minimax-m2.7:cloud}
       - CODE_REASONING_MODEL=${CODE_REASONING_MODEL:-kimi-k2.5:cloud}
       - EMBED_MODEL=${EMBED_MODEL:-nomic-embed-text}
@@ -42,9 +41,8 @@ services:
       - chroma_data:/app/chroma_db
       - repo_cache:/app/repo_cache
       - app_data:/app/data
-    depends_on:
-      ollama:
-        condition: service_healthy
+    # Don't hard-depend on the ollama container — prod uses a remote Ollama and
+    # ollama runs only with the "local-ollama" profile in dev.
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
