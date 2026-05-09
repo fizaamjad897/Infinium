@@ -141,9 +141,19 @@ def _chunk_and_store(files, commits_with_diffs, commits_basic, branches, repo_na
     """Shared chunk+embed+store logic used by all ingest paths."""
     all_chunks = []
 
-    # File chunks (with contextual prefix)
-    for f in files:
-        all_chunks.extend(chunk_file(f, settings.CHUNK_SIZE, settings.CHUNK_OVERLAP))
+    # File chunks (with contextual prefix) — parallelised across CPUs since
+    # AST/regex chunking is purely CPU-bound and trivially independent per file.
+    chunk_t0 = time.time()
+    if files:
+        chunk_workers = min(8, max(2, len(files)))
+        with ThreadPoolExecutor(max_workers=chunk_workers) as pool:
+            for sub in pool.map(
+                lambda f: chunk_file(f, settings.CHUNK_SIZE, settings.CHUNK_OVERLAP),
+                files,
+            ):
+                all_chunks.extend(sub)
+        print(f"   ✂️  Chunked {len(files)} files in {time.time()-chunk_t0:.1f}s "
+              f"({len(all_chunks)} chunks)")
 
     # Commit diff chunks (rich — includes actual diff patch)
     for c in commits_with_diffs:

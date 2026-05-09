@@ -90,8 +90,8 @@ class Settings(BaseSettings):
     # ── Embedding throughput ──
     # We batch many texts into a single Ollama /api/embed call (the newer
     # batch endpoint), then run several batches in parallel.
-    EMBED_BATCH_SIZE: int = 32         # texts per Ollama /api/embed call
-    EMBED_WORKERS: int = 6             # parallel batches in flight
+    EMBED_BATCH_SIZE: int = 64         # texts per Ollama /api/embed call
+    EMBED_WORKERS: int = 8             # parallel batches in flight (match OLLAMA_NUM_PARALLEL)
     EMBED_PROGRESS_EVERY: int = 50     # status update every N chunks during embedding
     # Set to true to skip the batch endpoint and go straight to per-text.
     DISABLE_BATCH_EMBED: bool = False
