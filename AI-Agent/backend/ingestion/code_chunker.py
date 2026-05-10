@@ -27,7 +27,11 @@ from typing import Optional
 
 def _python_chunks(source: str) -> list[dict]:
     """Return a list of {kind, name, start, end, text} for top-level funcs/classes
-    plus a 'preamble' chunk for everything else (imports, constants, etc.)."""
+    AND class methods, plus a 'preamble' chunk for everything else.
+
+    Methods are emitted with the qualified name ``ClassName.method_name`` so the
+    Code Refactor UI can show and target them individually.
+    """
     try:
         tree = ast.parse(source)
     except SyntaxError:
@@ -48,6 +52,23 @@ def _python_chunks(source: str) -> list[dict]:
             spans.append({"kind": kind, "name": node.name, "start": start, "end": end, "text": text})
             for ln in range(start, end):
                 consumed.add(ln)
+
+            # If it's a class, also emit its methods as their own selectable spans.
+            # The class span still exists (so "refactor whole class" works), but
+            # the FE tree gets one entry per method too.
+            if isinstance(node, ast.ClassDef):
+                for sub in node.body:
+                    if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        m_start = (sub.decorator_list[0].lineno - 1) if sub.decorator_list else (sub.lineno - 1)
+                        m_end = getattr(sub, "end_lineno", sub.lineno) or sub.lineno
+                        m_text = "".join(lines[m_start:m_end])
+                        spans.append({
+                            "kind": "function",
+                            "name": f"{node.name}.{sub.name}",
+                            "start": m_start,
+                            "end": m_end,
+                            "text": m_text,
+                        })
 
     # Preamble: everything not owned by a top-level def — module docstring,
     # imports, constants. Concatenated as ONE chunk.

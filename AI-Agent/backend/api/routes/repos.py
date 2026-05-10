@@ -293,6 +293,38 @@ def _repo_cache_path(repo_name: str) -> str:
     return _os.path.join(settings.REPO_CACHE_DIR, repo_name.replace("/", "_"))
 
 
+def _ensure_cloned(repo_name: str) -> tuple[str, Optional[str]]:
+    """Make sure a repo is cloned in repo_cache/. If it isn't but we know its
+    URL from the ingestion-status store, clone it on the fly.
+
+    Returns (clone_path, error_or_none).
+    """
+    root = _repo_cache_path(repo_name)
+    if _os.path.isdir(root) and _os.path.isdir(_os.path.join(root, ".git")):
+        return root, None
+
+    # Look up the original repo URL from the ingestion status manifest
+    from backend.ingestion.pipeline import get_ingestion_status
+    status = get_ingestion_status(repo_name) or {}
+    repo_url = status.get("repo_url") or ""
+    if not repo_url:
+        # Try the "branches" scope fallback
+        status2 = get_ingestion_status(repo_name, scope="branches") or {}
+        repo_url = status2.get("repo_url") or ""
+    if not repo_url:
+        return root, ("repo not in repo_cache and no repo_url found in ingestion-status. "
+                      "Re-ingest via /api/ingest/branches to clone it.")
+
+    try:
+        from backend.ingestion.github_loader import clone_repo
+        token = settings.GITHUB_API_TOKEN or None
+        print(f"   📥 Auto-cloning {repo_name} from {repo_url} (shallow) for tree/refactor access...")
+        clone_repo(repo_url, root, github_token=token, shallow_depth=60)
+        return root, None
+    except Exception as e:
+        return root, f"auto-clone failed: {e}"
+
+
 @router.get("/{repo_name}/tree")
 async def get_repo_tree(
     repo_name: str,
@@ -314,10 +346,9 @@ async def get_repo_tree(
         ]
       }
     """
-    root = _repo_cache_path(repo_name)
-    if not _os.path.isdir(root):
-        raise HTTPException(status_code=404, detail=f"Repo '{repo_name}' not in repo_cache. "
-                                                    "Ingest it first.")
+    root, err = _ensure_cloned(repo_name)
+    if err:
+        raise HTTPException(status_code=404, detail=err)
 
     from backend.ingestion.code_chunker import function_aware_chunks
 
@@ -365,9 +396,9 @@ async def get_repo_file(
 ):
     """Return the raw text of one file from a cloned repo, plus its detected
     function/class spans. Used by the Code Refactor viewer."""
-    root = _repo_cache_path(repo_name)
-    if not _os.path.isdir(root):
-        raise HTTPException(status_code=404, detail=f"Repo '{repo_name}' not in repo_cache.")
+    root, err = _ensure_cloned(repo_name)
+    if err:
+        raise HTTPException(status_code=404, detail=err)
 
     # Path traversal guard
     safe = _os.path.normpath(_os.path.join(root, path))

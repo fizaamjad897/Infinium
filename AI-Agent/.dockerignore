@@ -1,0 +1,48 @@
+# Anything here is excluded from the Docker build context — keeps image
+# size + upload time small, AND prevents code-only changes from busting
+# the cache by accidentally including data dirs.
+
+# Runtime data — recreated by the running container, never bake it in
+chroma_db/
+repo_cache/
+data/
+
+# Local virtualenvs / Python cruft
+venv/
+.venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Editor / OS noise
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
+
+# Git history (the image doesn't need it). Note: gitpython doesn't need this
+# at runtime — it only operates on freshly cloned repos under repo_cache/.
+.git/
+.gitignore
+.github/
+
+# Environment / secrets — re-injected via compose, never copy them in
+.env
+.env.local
+.env.*.local
+
+# Tests + docs (keep image lean)
+tests/
+*.md
+HOW_TO_TEST.md
+
+# Build artifacts
+dist/
+build/
+*.egg-info/

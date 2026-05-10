@@ -16,10 +16,10 @@ case "$ACTION" in
 
   deploy)
     echo "🚀  Pulling latest code..."
-    git pull origin main 2>/dev/null || true     # skip if not a git repo
+    git pull 2>/dev/null || true     # skip if not a git repo
 
-    echo "🔨  Building backend image..."
-    $COMPOSE build --no-cache backend
+    echo "🔨  Building backend image (with cache; use './deploy.sh rebuild' for a clean rebuild)..."
+    DOCKER_BUILDKIT=1 $COMPOSE build backend
 
     echo "▶️   Starting all services..."
     $COMPOSE up -d
@@ -46,6 +46,13 @@ case "$ACTION" in
     echo "      ollama pull minimax-m2.7:cloud"
     echo "      ollama pull kimi-k2.5:cloud"
     echo "      ollama pull qwen3-coder:480b-cloud"
+    ;;
+
+  rebuild)
+    echo "🔨  Force-rebuilding backend image (no cache)..."
+    git pull 2>/dev/null || true
+    DOCKER_BUILDKIT=1 $COMPOSE build --no-cache backend
+    $COMPOSE up -d
     ;;
 
   check-ollama)
@@ -84,7 +91,7 @@ case "$ACTION" in
     ;;
 
   *)
-    echo "Usage: ./deploy.sh [deploy|check-ollama|logs|logs-all|stop|restart|status]"
+    echo "Usage: ./deploy.sh [deploy|rebuild|check-ollama|logs|logs-all|stop|restart|status]"
     exit 1
     ;;
 esac

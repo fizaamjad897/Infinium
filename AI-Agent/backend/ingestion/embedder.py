@@ -454,16 +454,26 @@ def embed_and_store(
             for j in range(0, len(documents), sub_batch_size)
         ]
         results: list[Optional[list[list[float]]]] = [None] * len(sub_batches)
+        print(f"   🚀 Embedding batch {i//chroma_batch_size + 1}: "
+              f"{len(documents)} texts → {len(sub_batches)} sub-batches × {sub_batch_size} "
+              f"in flight ({workers} workers)")
 
+        batch_t0 = time.time()
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {
                 pool.submit(_ollama_embed_batch, sb, 2, embed_model): idx
                 for idx, sb in enumerate(sub_batches)
             }
+            completed = 0
             for future in as_completed(futures):
                 idx = futures[future]
+                sb_t0 = time.time()
                 try:
                     results[idx] = future.result()
+                    completed += 1
+                    print(f"      ✓ sub-batch {idx+1}/{len(sub_batches)} "
+                          f"({len(sub_batches[idx])} texts) done "
+                          f"[batch elapsed {time.time()-batch_t0:.1f}s]")
                 except Exception as e:
                     print(f"   ⚠️ Sub-batch {idx} failed entirely: {e}")
                     results[idx] = [[0.0] * 768 for _ in sub_batches[idx]]
@@ -475,6 +485,9 @@ def embed_and_store(
                         last_reported = processed
                     except Exception:
                         pass
+
+        print(f"   ⏱️  Embed phase complete in {time.time()-batch_t0:.1f}s "
+              f"({len(documents)/(time.time()-batch_t0):.1f} chunks/sec)")
 
         # Flatten preserving original order (sub-batches are stored at their idx)
         embeddings: list[list[float]] = []

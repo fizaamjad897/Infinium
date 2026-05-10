@@ -97,10 +97,21 @@ class Settings(BaseSettings):
     # accidentally reading 100MB .h5/.pt files even if they slip past
     # SUPPORTED_EXTENSIONS.
     BINARY_EXTENSIONS: str = (
+        # ML model weights / datasets
         ".h5,.pt,.pth,.pkl,.pickle,.onnx,.pb,.ckpt,.safetensors,"
         ".bin,.weights,.tflite,.npy,.npz,.joblib,.model,.pmml,"
-        ".mp4,.mp3,.wav,.flac,.mov,.avi,.png,.jpg,.jpeg,.gif,"
-        ".webp,.svg,.ico,.pdf,.zip,.tar,.gz,.7z,.exe,.dll,.so,.dylib"
+        ".dat,.data,"
+        # Media
+        ".mp4,.mp3,.wav,.flac,.mov,.avi,.mkv,.webm,.m4a,.ogg,"
+        ".png,.jpg,.jpeg,.gif,.webp,.svg,.ico,.bmp,.tiff,.tif,.heic,"
+        ".pdf,"
+        # Archives + compression
+        ".zip,.tar,.gz,.bz2,.7z,.xz,.rar,.tgz,.tbz2,"
+        # OS / package installers
+        ".exe,.dll,.so,.dylib,.msi,.bat,.cmd,.iso,.dmg,.deb,.rpm,.apk,"
+        ".jar,.war,.ear,.class,"
+        # Fonts (sometimes huge in /public)
+        ".ttf,.otf,.woff,.woff2,.eot"
     )
 
     # For data-heavy formats, use a much larger chunk size — fewer chunks
