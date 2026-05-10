@@ -572,10 +572,35 @@ def ingest_remote_url(
 
 
 def remove_repository(repo_name: str):
+    """Fully remove a repo from the system:
+      1. Drop the ChromaDB collection (vectors).
+      2. Delete repo_cache/<repo>/ on disk (cloned files).
+      3. Remove the ingestion-status entries (repo + branches scope).
+    """
+    import shutil
+
+    # 1. Vectors
     delete_collection(repo_name)
+
+    # 2. Disk clone — both the sanitised dirname and the raw name, just in case
+    candidates = {
+        os.path.join(settings.REPO_CACHE_DIR, repo_name.replace("/", "_")),
+        os.path.join(settings.REPO_CACHE_DIR, repo_name),
+    }
+    for path in candidates:
+        if os.path.isdir(path):
+            try:
+                shutil.rmtree(path, ignore_errors=True)
+                print(f"   🗑️ Deleted clone: {path}")
+            except Exception as e:
+                print(f"   ⚠️ Failed to delete clone at {path}: {e}")
+
+    # 3. Status JSON — both the default scope and the branches scope key
     _load_status()
-    _ingestion_status.pop(repo_name, None)
+    for key in (repo_name, f"{repo_name}:branches"):
+        _ingestion_status.pop(key, None)
     _save_status()
+
     print(f"   🗑️ Removed repository: {repo_name}")
 
 

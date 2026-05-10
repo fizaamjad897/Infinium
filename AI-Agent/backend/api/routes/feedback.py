@@ -81,3 +81,99 @@ async def list_feedback(
 ):
     """Recent feedback entries, newest first. Filter by target_type or repo_name."""
     return get_all_feedbacks(limit=limit, target_type=target_type, repo_name=repo_name)
+
+
+@router.get("/metrics")
+async def metrics(
+    days: int = Query(30, ge=1, le=365, description="Rolling window in days"),
+    target_type: Optional[str] = Query(None, description="Filter to one target_type"),
+    repo_name: Optional[str] = Query(None, description="Filter to one repo"),
+):
+    """User-perceived accuracy / quality metrics derived from the feedback log.
+
+    Returns helpfulness rate, average rating, per-day time series, and
+    per-target_type / per-model / per-repo breakdowns. Designed for a
+    dashboard chart — refresh on every visit, no caching.
+
+    Honest framing: this is *user-perceived* accuracy (👍/👎), not
+    ground-truth accuracy. With no labeled test set this is the best signal
+    we have, and it's the standard metric for production LLM apps.
+    """
+    from datetime import datetime, timedelta
+    from collections import defaultdict
+
+    fb = get_all_feedbacks(limit=10_000)  # whole store; small JSON so fine
+    # Filters
+    if target_type:
+        fb = [f for f in fb if f.get("target_type", "query") == target_type]
+    if repo_name:
+        fb = [f for f in fb if f.get("repo_name") == repo_name]
+
+    cutoff = datetime.now() - timedelta(days=days)
+    def _parse_dt(s: str):
+        try:
+            return datetime.fromisoformat(s)
+        except Exception:
+            return None
+
+    in_window = [f for f in fb if (d := _parse_dt(f.get("created_at", ""))) and d >= cutoff]
+
+    def _summary(entries: list[dict]) -> dict:
+        if not entries:
+            return {"total": 0, "up": 0, "down": 0, "helpfulness_rate": 0.0, "average_rating": 0.0}
+        up = sum(1 for e in entries if e.get("rating", 0) >= 4)
+        down = sum(1 for e in entries if e.get("rating", 0) <= 2)
+        rated = up + down  # ignore neutral 3s in the rate
+        return {
+            "total": len(entries),
+            "up": up,
+            "down": down,
+            "helpfulness_rate": round(up / rated, 4) if rated else 0.0,
+            "average_rating": round(sum(e.get("rating", 0) for e in entries) / len(entries), 2),
+        }
+
+    # Per-day series — exactly `days` buckets so the chart has consistent x-axis
+    by_day_map: dict[str, list[dict]] = defaultdict(list)
+    for e in in_window:
+        d = _parse_dt(e.get("created_at", ""))
+        if d:
+            by_day_map[d.date().isoformat()].append(e)
+    by_day = []
+    for i in range(days):
+        date = (datetime.now().date() - timedelta(days=days - 1 - i)).isoformat()
+        entries = by_day_map.get(date, [])
+        s = _summary(entries)
+        by_day.append({"date": date, **s})
+
+    # Per-dimension breakdowns (use the in-window slice so they match the headline)
+    def _group_by(key: str) -> dict:
+        groups: dict[str, list[dict]] = defaultdict(list)
+        for e in in_window:
+            val = e.get(key) or (e.get("metadata") or {}).get(key) or "unknown"
+            groups[str(val)].append(e)
+        return {k: _summary(v) for k, v in groups.items()}
+
+    # recent negatives — useful triage list (last 10 thumbs-down with comments)
+    recent_negatives = [
+        {
+            "id": e.get("id"),
+            "target_type": e.get("target_type"),
+            "repo_name": e.get("repo_name"),
+            "query": (e.get("query") or "")[:200],
+            "comment": e.get("comment") or "",
+            "rating": e.get("rating"),
+            "created_at": e.get("created_at"),
+        }
+        for e in in_window if e.get("rating", 0) <= 2
+    ][:10]
+
+    return {
+        "window_days": days,
+        "filters": {"target_type": target_type, "repo_name": repo_name},
+        "summary": _summary(in_window),
+        "by_day": by_day,
+        "by_target_type": _group_by("target_type"),
+        "by_model": _group_by("model"),
+        "by_repo": _group_by("repo_name"),
+        "recent_negatives": recent_negatives,
+    }

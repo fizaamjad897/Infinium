@@ -79,6 +79,11 @@ async def delete_repo(
 ):
     """Remove a repository and all its indexed data.
 
+    Cleans up:
+      - ChromaDB collection (vectors)
+      - repo_cache/<repo>/ on disk (cloned files)
+      - data/ingestion_status.json entries
+
     Authorised via either an ``X-GitHub-Token`` header (Node.js backend has
     already authenticated the user) or a JWT bearer token.
     """
@@ -86,6 +91,80 @@ async def delete_repo(
         raise HTTPException(status_code=401, detail="Auth required (X-GitHub-Token header or JWT)")
     remove_repository(repo_name)
     return {"status": "removed", "repo_name": repo_name}
+
+
+@router.post("/admin/cleanup-orphans")
+async def cleanup_orphans(
+    dry_run: bool = True,
+    x_github_token: Optional[str] = Header(None),
+    current_user: Optional[dict] = Depends(get_current_user_optional),
+):
+    """Sweep orphans left behind by old deletes:
+      - repo_cache/ directories with no matching ingestion-status entry
+      - ChromaDB collections with no matching ingestion-status entry
+
+    Pass ``?dry_run=false`` to actually delete. Otherwise just reports.
+    """
+    if not (x_github_token or current_user):
+        raise HTTPException(status_code=401, detail="Auth required")
+
+    import shutil as _shutil
+    from backend.ingestion.embedder import list_collections
+
+    known: set[str] = set()
+    for k in (get_all_repos() or []):
+        n = k.get("repo_name", "")
+        if n:
+            known.add(n.replace("/", "_"))
+            known.add(n)
+
+    # Orphan clones on disk
+    orphan_clones: list[str] = []
+    if os.path.isdir(settings.REPO_CACHE_DIR):
+        for entry in os.listdir(settings.REPO_CACHE_DIR):
+            if entry not in known:
+                orphan_clones.append(entry)
+
+    # Orphan Chroma collections
+    import re as _re
+    def _norm(name: str) -> str:
+        n = _re.sub(r'[^a-zA-Z0-9._-]', '_', name).strip('._-')
+        return (n if len(n) >= 3 else f"repo_{abs(hash(name)) % 10000}")[:512]
+    known_collections = {_norm(n) for n in known}
+    orphan_collections: list[str] = []
+    try:
+        for c in list_collections():
+            if c not in known_collections:
+                orphan_collections.append(c)
+    except Exception as e:
+        print(f"   ⚠️ Could not list collections: {e}")
+
+    deleted_clones = 0
+    deleted_collections = 0
+    if not dry_run:
+        from backend.ingestion.embedder import get_chroma_client
+        client = get_chroma_client()
+        for entry in orphan_clones:
+            try:
+                _shutil.rmtree(os.path.join(settings.REPO_CACHE_DIR, entry), ignore_errors=True)
+                deleted_clones += 1
+            except Exception as e:
+                print(f"   ⚠️ Failed deleting {entry}: {e}")
+        for c in orphan_collections:
+            try:
+                client.delete_collection(name=c)
+                deleted_collections += 1
+            except Exception as e:
+                print(f"   ⚠️ Failed deleting collection {c}: {e}")
+
+    return {
+        "dry_run": dry_run,
+        "orphan_clones": orphan_clones,
+        "orphan_collections": orphan_collections,
+        "deleted_clones": deleted_clones,
+        "deleted_collections": deleted_collections,
+        "tip": "POST ?dry_run=false to actually delete" if dry_run else "Cleanup complete.",
+    }
 
 
 @router.post("/{repo_name}/reindex")
@@ -293,27 +372,38 @@ def _repo_cache_path(repo_name: str) -> str:
     return _os.path.join(settings.REPO_CACHE_DIR, repo_name.replace("/", "_"))
 
 
-def _ensure_cloned(repo_name: str) -> tuple[str, Optional[str]]:
-    """Make sure a repo is cloned in repo_cache/. If it isn't but we know its
-    URL from the ingestion-status store, clone it on the fly.
-
+def _ensure_cloned(repo_name: str, repo_url_hint: Optional[str] = None) -> tuple[str, Optional[str]]:
+    """Make sure a repo is cloned in repo_cache/. If it isn't:
+      1. Use ``repo_url_hint`` if provided (passed by FE).
+      2. Else look up the URL in the ingestion-status store.
+      3. Else try to reconstruct from repo_name (assumes "owner_repo" form).
     Returns (clone_path, error_or_none).
     """
     root = _repo_cache_path(repo_name)
     if _os.path.isdir(root) and _os.path.isdir(_os.path.join(root, ".git")):
         return root, None
 
-    # Look up the original repo URL from the ingestion status manifest
-    from backend.ingestion.pipeline import get_ingestion_status
-    status = get_ingestion_status(repo_name) or {}
-    repo_url = status.get("repo_url") or ""
+    repo_url = (repo_url_hint or "").strip()
+
     if not repo_url:
-        # Try the "branches" scope fallback
-        status2 = get_ingestion_status(repo_name, scope="branches") or {}
-        repo_url = status2.get("repo_url") or ""
+        from backend.ingestion.pipeline import get_ingestion_status
+        status = get_ingestion_status(repo_name) or {}
+        repo_url = status.get("repo_url") or ""
+        if not repo_url:
+            status2 = get_ingestion_status(repo_name, scope="branches") or {}
+            repo_url = status2.get("repo_url") or ""
+
+    # Last resort: guess from "owner_repo" → https://github.com/owner/repo
+    # We can't tell owner from repo when the repo name itself has underscores,
+    # so we only try the first-underscore split.
+    if not repo_url and "_" in repo_name:
+        owner, _, rest = repo_name.partition("_")
+        repo_url = f"https://github.com/{owner}/{rest}"
+        print(f"   ↪︎ No repo_url stored — guessed {repo_url} from name")
+
     if not repo_url:
-        return root, ("repo not in repo_cache and no repo_url found in ingestion-status. "
-                      "Re-ingest via /api/ingest/branches to clone it.")
+        return root, ("repo not in repo_cache and no repo_url available. "
+                      "Pass ?repo_url=... or re-ingest the repo.")
 
     try:
         from backend.ingestion.github_loader import clone_repo
@@ -322,13 +412,14 @@ def _ensure_cloned(repo_name: str) -> tuple[str, Optional[str]]:
         clone_repo(repo_url, root, github_token=token, shallow_depth=60)
         return root, None
     except Exception as e:
-        return root, f"auto-clone failed: {e}"
+        return root, f"auto-clone failed for {repo_url}: {e}"
 
 
 @router.get("/{repo_name}/tree")
 async def get_repo_tree(
     repo_name: str,
     include_symbols: bool = True,
+    repo_url: Optional[str] = None,
     current_user: Optional[dict] = Depends(get_current_user_optional),
 ):
     """Return the file tree of a cloned repo, with functions/classes per file.
@@ -346,7 +437,7 @@ async def get_repo_tree(
         ]
       }
     """
-    root, err = _ensure_cloned(repo_name)
+    root, err = _ensure_cloned(repo_name, repo_url_hint=repo_url)
     if err:
         raise HTTPException(status_code=404, detail=err)
 
@@ -392,11 +483,12 @@ async def get_repo_tree(
 async def get_repo_file(
     repo_name: str,
     path: str,
+    repo_url: Optional[str] = None,
     current_user: Optional[dict] = Depends(get_current_user_optional),
 ):
     """Return the raw text of one file from a cloned repo, plus its detected
     function/class spans. Used by the Code Refactor viewer."""
-    root, err = _ensure_cloned(repo_name)
+    root, err = _ensure_cloned(repo_name, repo_url_hint=repo_url)
     if err:
         raise HTTPException(status_code=404, detail=err)
 

@@ -531,9 +531,20 @@ def embed_and_store(
 
 
 def delete_collection(repo_name: str):
-    """Delete a repository's collection from ChromaDB."""
+    """Delete a repository's collection from ChromaDB.
+
+    Must mirror the EXACT normalisation in get_chroma_collection — otherwise
+    we look for the wrong name and silently orphan real vectors (the bug
+    that produced "Collection X does not exist" while a populated collection
+    sat alongside under a slightly different name).
+    """
+    import re
     client = get_chroma_client()
-    collection_name = repo_name.replace("/", "_").replace("-", "_").replace(".", "_")[:63]
+    collection_name = re.sub(r'[^a-zA-Z0-9._-]', '_', repo_name)
+    collection_name = collection_name.strip('._-')
+    if not collection_name or len(collection_name) < 3:
+        collection_name = f"repo_{abs(hash(repo_name)) % 10000}"
+    collection_name = collection_name[:512]
     try:
         client.delete_collection(name=collection_name)
         print(f"   Deleted collection: {collection_name}")

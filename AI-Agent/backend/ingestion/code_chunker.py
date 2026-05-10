@@ -87,11 +87,27 @@ def _python_chunks(source: str) -> list[dict]:
 # tracking brace depth, to find the matching close.
 
 _LANG_REGEXES: dict[str, list[re.Pattern]] = {
-    # JavaScript / TypeScript
+    # JavaScript / TypeScript — covers ES modules, CommonJS, Express handlers,
+    # function expressions, class methods, etc.
     "javascript": [
-        re.compile(r"^\s*(?:export\s+)?(?:async\s+)?function\s+(\w+)", re.MULTILINE),
-        re.compile(r"^\s*(?:export\s+)?const\s+(\w+)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>", re.MULTILINE),
-        re.compile(r"^\s*(?:export\s+)?(?:abstract\s+)?class\s+(\w+)", re.MULTILINE),
+        # function declaration:        function foo() / export function foo / export default function foo
+        re.compile(r"^\s*(?:export\s+(?:default\s+)?)?(?:async\s+)?function\s*\*?\s*(\w+)", re.MULTILINE),
+        # arrow function variable:     const foo = (a, b) => / export const foo = async () =>
+        re.compile(r"^\s*(?:export\s+(?:default\s+)?)?(?:const|let|var)\s+(\w+)\s*(?::\s*[^=]+)?=\s*(?:async\s+)?(?:\([^)]*\)|\w+)\s*=>", re.MULTILINE),
+        # function expression variable: const foo = function() {  /  let foo = async function()
+        re.compile(r"^\s*(?:export\s+(?:default\s+)?)?(?:const|let|var)\s+(\w+)\s*(?::\s*[^=]+)?=\s*(?:async\s+)?function", re.MULTILINE),
+        # CommonJS export function:    module.exports = function foo / module.exports.foo = function / exports.foo = function
+        re.compile(r"^\s*module\.exports(?:\.(\w+))?\s*=\s*(?:async\s+)?function", re.MULTILINE),
+        re.compile(r"^\s*exports\.(\w+)\s*=\s*(?:async\s+)?function", re.MULTILINE),
+        re.compile(r"^\s*exports\.(\w+)\s*=\s*(?:async\s+)?\([^)]*\)\s*=>", re.MULTILINE),
+        # Express / Fastify route handlers — use the route path as the symbol name
+        re.compile(r"""^\s*(?:app|router|server)\.(?:get|post|put|patch|delete|all|use|head|options)\s*\(\s*['"`]([^'"`]+)['"`]""", re.MULTILINE),
+        # class declaration:           class Foo / export abstract class Foo
+        re.compile(r"^\s*(?:export\s+(?:default\s+)?)?(?:abstract\s+)?class\s+(\w+)", re.MULTILINE),
+        # class method (loose — matches `  methodName(args) {` indented 2+ spaces)
+        re.compile(r"^\s{2,}(?:public\s+|private\s+|protected\s+|static\s+|async\s+|\s)*(\w+)\s*\([^)]*\)\s*(?::\s*[\w<>,\[\]\s]+)?\s*\{", re.MULTILINE),
+        # TypeScript: interface / type / enum
+        re.compile(r"^\s*(?:export\s+(?:default\s+)?)?(?:interface|type|enum)\s+(\w+)", re.MULTILINE),
     ],
     # Java / C#
     "java": [
