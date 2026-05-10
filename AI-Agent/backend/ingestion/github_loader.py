@@ -26,9 +26,30 @@ SUPPORTED_EXTENSIONS = {
 }
 
 IGNORE_DIRS = {
-    "node_modules", ".git", "__pycache__", ".next",
-    "dist", "build", ".venv", "venv", "env",
-    ".mypy_cache", ".pytest_cache", "coverage",
+    # Dependency dirs — never useful as source
+    "node_modules", "bower_components", "jspm_packages", "vendor",
+    "site-packages", ".pnpm-store",
+    # Virtual envs
+    ".venv", "venv", "env", ".env",
+    # Version control & CI metadata
+    ".git", ".github", ".gitlab", ".circleci",
+    # Build / generated output
+    "dist", "build", "out", "target", "bin",
+    ".next", ".nuxt", ".svelte-kit", ".astro", ".docusaurus",
+    "storybook-static", "playwright-report",
+    # Caches
+    "__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache",
+    ".cache", ".parcel-cache", ".turbo", ".eslintcache",
+    "coverage", ".coverage", "htmlcov", ".nyc_output",
+    # Test fixtures / snapshots (data, not real source)
+    "__snapshots__", "__mocks__",
+    # Editor / OS
+    ".vscode", ".idea", ".DS_Store",
+    # Static-asset trees (images, fonts, videos — almost never refactorable)
+    "assets", "static", "public", "images", "img", "media", "videos",
+    "fonts", "icons",
+    # Localization (machine-generated, voluminous, rarely useful)
+    "locale", "locales", "i18n",
 }
 
 

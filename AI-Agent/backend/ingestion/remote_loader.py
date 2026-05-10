@@ -246,9 +246,21 @@ def fetch_via_tarball(
     size_mb = len(tarball_bytes) / 1_000_000
     print(f"   📦 Got {size_mb:.1f} MB in {time.time()-started:.1f}s — extracting…")
 
+    # Pull the same filtering rules used by the clone-based walker so
+    # public-repo ingestion doesn't end up with node_modules/, build/,
+    # dist/, etc. baked into the index.
+    from backend.config import settings
+    from backend.ingestion.github_loader import IGNORE_DIRS
+
+    skip_patterns = [p.strip().lower() for p in (settings.SKIP_PATH_PATTERNS or "").split(",") if p.strip()]
+    binary_exts = {e.strip().lower() for e in (settings.BINARY_EXTENSIONS or "").split(",") if e.strip()}
+
     files: list[dict] = []
     skipped_too_big = 0
     skipped_unsupported = 0
+    skipped_ignored_dir = 0
+    skipped_by_pattern = 0
+    skipped_binary = 0
 
     with tarfile.open(fileobj=io.BytesIO(tarball_bytes), mode="r:gz") as tar:
         for member in tar:
@@ -263,7 +275,24 @@ def fetch_via_tarball(
             if not name:
                 continue
 
+            # Folder-level skip — checks every path segment against IGNORE_DIRS
+            # (node_modules, build, dist, .next, venv, __pycache__, …).
+            parts = name.split("/")
+            if any(p in IGNORE_DIRS for p in parts[:-1]):
+                skipped_ignored_dir += 1
+                continue
+
+            # Pattern-based skip (case-insensitive) — translated docs, model
+            # weights, vendor/, etc.
+            name_lower = name.lower()
+            if any(pat in name_lower for pat in skip_patterns):
+                skipped_by_pattern += 1
+                continue
+
             ext = "." + name.rsplit(".", 1)[-1].lower() if "." in name else ""
+            if ext in binary_exts:
+                skipped_binary += 1
+                continue
             if ext not in SUPPORTED_EXTENSIONS:
                 skipped_unsupported += 1
                 continue
@@ -289,8 +318,12 @@ def fetch_via_tarball(
                 "size": len(content),
             })
 
-    print(f"   ✅ Extracted {len(files)} files "
-          f"(skipped {skipped_unsupported} unsupported, {skipped_too_big} oversized)")
+    print(f"   ✅ Extracted {len(files)} files (skipped: "
+          f"{skipped_ignored_dir} in ignored dirs, "
+          f"{skipped_by_pattern} via SKIP_PATH_PATTERNS, "
+          f"{skipped_binary} binary, "
+          f"{skipped_unsupported} unsupported ext, "
+          f"{skipped_too_big} oversized)")
     return files
 
 

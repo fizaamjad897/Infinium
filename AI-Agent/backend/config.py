@@ -79,18 +79,30 @@ class Settings(BaseSettings):
         "docs/ru/,docs/tr/,docs/uk/,docs/zh/,docs/zh-hant/,docs/it/,"
         "docs/pl/,docs/nl/,docs/fa/,docs/he/,docs/hi/,docs/id/,"
         "docs/vi/,docs/th/,docs/bn/,docs/ar/,/i18n/,/translations/,"
-        # vendored / minified / fixture noise
+        "/locale/,/locales/,"
+        # vendored / minified / fixture / mock noise
         "/vendor/,/third_party/,/.min.,fixtures/,testdata/,/snapshots/,"
-        # ML model + dataset directories (case-insensitive match below)
+        "/__snapshots__/,/__mocks__/,/mocks/,/cypress/,/e2e/,"
+        "/storybook-static/,/.storybook/,/playwright-report/,"
+        # ML model + dataset directories
         "_models/,/models/,/model_weights/,/models_weights/,/checkpoints/,"
         "/checkpoint/,/pretrained/,/weights/,/saved_models/,/saved_model/,"
         "/ai_models/,/ml_models/,/ml-models/,/training/,/trained/,"
         "/datasets/,/dataset/,/.cache/huggingface/,/.cache/torch/,"
         # build / generated artifacts
-        "/build/,/dist/,/out/,/target/,/.next/,/.nuxt/,/.svelte-kit/,"
-        "/coverage/,/.coverage/,/htmlcov/,/__pycache__/,"
+        "/build/,/dist/,/out/,/target/,/bin/,/.next/,/.nuxt/,/.svelte-kit/,"
+        "/.astro/,/.docusaurus/,/.turbo/,/.parcel-cache/,"
+        "/coverage/,/.coverage/,/htmlcov/,/.nyc_output/,/__pycache__/,"
         # virtualenvs / package caches
-        "/venv/,/.venv/,/env/,/site-packages/,/node_modules/"
+        "/venv/,/.venv/,/env/,/site-packages/,/node_modules/,"
+        "/bower_components/,/jspm_packages/,/.pnpm-store/,"
+        # static-asset trees (rarely have real source worth indexing)
+        "/assets/,/static/,/public/assets/,/images/,/img/,/media/,"
+        "/videos/,/fonts/,/icons/,"
+        # migration files (Django/Rails — usually mechanical, not refactor targets)
+        "/migrations/,/db/migrate/,"
+        # editor / VCS metadata
+        "/.idea/,/.vscode/,/.github/,/.gitlab/,/.circleci/"
     )
 
     # Binary file extensions to never read as source. Cheap guard against
