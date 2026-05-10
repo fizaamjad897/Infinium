@@ -239,49 +239,86 @@ def extract_file_blame(repo_path: str, file_path: str) -> list[dict]:
 
 
 def walk_files(repo_path: str) -> list[dict]:
-    """Walk repository and read all supported source files."""
+    """Walk repository and read all supported source files.
+
+    Skip rules (in order, cheapest first):
+      1. Directory name matches IGNORE_DIRS → don't descend.
+      2. Path substring matches SKIP_PATH_PATTERNS (case-insensitive) → skip.
+         Also prunes the directory so we don't descend into it.
+      3. File extension in BINARY_EXTENSIONS → skip without opening.
+      4. File extension not in SUPPORTED_EXTENSIONS → skip.
+      5. File size > 500 KB → skip.
+    """
+    import os as _os
     from backend.config import settings
 
-    skip_patterns = [p.strip() for p in (settings.SKIP_PATH_PATTERNS or "").split(",") if p.strip()]
+    skip_patterns = [p.strip().lower() for p in (settings.SKIP_PATH_PATTERNS or "").split(",") if p.strip()]
     binary_exts = {e.strip().lower() for e in (settings.BINARY_EXTENSIONS or "").split(",") if e.strip()}
 
-    files = []
+    files: list[dict] = []
     skipped_by_pattern = 0
     skipped_binary = 0
     base = Path(repo_path)
+    base_str = str(base)
 
-    for path in base.rglob("*"):
-        if any(ignored in path.parts for ignored in IGNORE_DIRS):
-            continue
+    # Use os.walk so we can prune directories in-place — much faster than
+    # rglob walking into a 200MB models/ folder just to skip every file.
+    for dirpath, dirnames, filenames in _os.walk(base_str):
+        # Prune ignored top-level dirs (node_modules, .git, etc.)
+        dirnames[:] = [d for d in dirnames if d not in IGNORE_DIRS]
 
-        ext = path.suffix.lower()
-        if ext in binary_exts:
-            skipped_binary += 1
-            continue
+        # Prune any subdirectory whose path matches a SKIP pattern. This
+        # prevents descending into multi-GB model trees entirely.
+        rel_dir = _os.path.relpath(dirpath, base_str).replace("\\", "/")
+        rel_dir_norm = ("" if rel_dir == "." else rel_dir + "/").lower()
+        # Filter dirnames in-place: drop any whose joined path-substring
+        # matches a skip pattern.
+        keep_dirs = []
+        for d in dirnames:
+            d_path = (rel_dir_norm + d + "/").lower()
+            if any(pat in d_path for pat in skip_patterns):
+                skipped_by_pattern += 1   # rough — counts dirs, not contained files
+                continue
+            keep_dirs.append(d)
+        dirnames[:] = keep_dirs
 
-        if ext in SUPPORTED_EXTENSIONS and path.is_file():
-            rel = str(path.relative_to(base)).replace("\\", "/")
-            if any(pat in rel for pat in skip_patterns):
+        for name in filenames:
+            ext = _os.path.splitext(name)[1].lower()
+            if ext in binary_exts:
+                skipped_binary += 1
+                continue
+            if ext not in SUPPORTED_EXTENSIONS:
+                continue
+
+            rel_file = (rel_dir_norm + name).lower()
+            if any(pat in rel_file for pat in skip_patterns):
                 skipped_by_pattern += 1
                 continue
+
+            full = _os.path.join(dirpath, name)
             try:
-                if path.stat().st_size > 500_000:
+                if _os.path.getsize(full) > 500_000:
                     continue
-                content = path.read_text(encoding="utf-8", errors="ignore")
-                if content.strip():
-                    files.append({
-                        "path": rel,
-                        "content": content,
-                        "extension": ext,
-                        "size": len(content),
-                    })
+                with open(full, "r", encoding="utf-8", errors="ignore") as fh:
+                    content = fh.read()
+                if not content.strip():
+                    continue
             except Exception:
                 continue
 
+            rel_for_meta = _os.path.relpath(full, base_str).replace("\\", "/")
+            files.append({
+                "path": rel_for_meta,
+                "content": content,
+                "extension": ext,
+                "size": len(content),
+            })
+
     if skipped_by_pattern:
-        print(f"   🚫 Skipped {skipped_by_pattern} files via SKIP_PATH_PATTERNS")
+        print(f"   🚫 Skipped {skipped_by_pattern} files/dirs via SKIP_PATH_PATTERNS")
     if skipped_binary:
         print(f"   🚫 Skipped {skipped_binary} binary files (models/media/archives)")
+    print(f"   📄 Walked {len(files)} indexable source files")
     return files
 
 

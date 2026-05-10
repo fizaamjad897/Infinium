@@ -31,6 +31,18 @@ class Settings(BaseSettings):
     REASONING_TEMPERATURE: float = 0.1
     LLM_TEMPERATURE: float = 0.1         # Low for precise, deterministic answers
     LLM_CONTEXT_WINDOW: int = 4096       # 4096 is plenty for RAG; 8192 doubles wait time
+    # ── Dual-model speed knobs ──
+    # Cap how many tokens the reasoning model (kimi) emits. Without this,
+    # kimi writes 2000+ token analyses that nobody reads — 80% of dual-model
+    # latency. 512 tokens (~400 words) is plenty for downstream synthesis.
+    REASONING_MAX_TOKENS: int = 512
+    # Top-K chunks fed to the reasoning step — usually fewer than the synthesis
+    # step needs, because reasoning only needs the highest-relevance code, not
+    # the full citation set.
+    REASONING_TOP_K: int = 8
+    # Hard cap on reasoning text spliced into the synthesis prompt. Keeps the
+    # synthesis input bounded even if reasoning ignored REASONING_MAX_TOKENS.
+    REASONING_MAX_CHARS: int = 2000
 
     # ── ChromaDB ──
     CHROMA_DB_PATH: str = str(PROJECT_ROOT / "chroma_db")
@@ -58,17 +70,27 @@ class Settings(BaseSettings):
     # Defaults skip translated docs (FastAPI/Vue/etc), vendored code, and minified
     # bundles — common sources of bloat that hurt ingestion time without
     # adding retrieval value.
+    # Substrings (case-insensitive) that cause a file to be skipped at walk
+    # time. Aggressive defaults — these are paths whose contents are almost
+    # never useful for code retrieval/refactor and slow ingestion massively.
     SKIP_PATH_PATTERNS: str = (
         # translated docs
         "docs/de/,docs/es/,docs/fr/,docs/ja/,docs/ko/,docs/pt/,"
         "docs/ru/,docs/tr/,docs/uk/,docs/zh/,docs/zh-hant/,docs/it/,"
         "docs/pl/,docs/nl/,docs/fa/,docs/he/,docs/hi/,docs/id/,"
         "docs/vi/,docs/th/,docs/bn/,docs/ar/,/i18n/,/translations/,"
-        # vendored/minified/fixture noise
-        "/vendor/,/third_party/,/.min.,fixtures/,testdata/,"
-        # ML model directories — skip code that ships *with* a binary model
-        "_MODELS/,/MODELS/,/models_weights/,/checkpoints/,/pretrained/,"
-        "/weights/,/saved_models/,/.cache/huggingface/"
+        # vendored / minified / fixture noise
+        "/vendor/,/third_party/,/.min.,fixtures/,testdata/,/snapshots/,"
+        # ML model + dataset directories (case-insensitive match below)
+        "_models/,/models/,/model_weights/,/models_weights/,/checkpoints/,"
+        "/checkpoint/,/pretrained/,/weights/,/saved_models/,/saved_model/,"
+        "/ai_models/,/ml_models/,/ml-models/,/training/,/trained/,"
+        "/datasets/,/dataset/,/.cache/huggingface/,/.cache/torch/,"
+        # build / generated artifacts
+        "/build/,/dist/,/out/,/target/,/.next/,/.nuxt/,/.svelte-kit/,"
+        "/coverage/,/.coverage/,/htmlcov/,/__pycache__/,"
+        # virtualenvs / package caches
+        "/venv/,/.venv/,/env/,/site-packages/,/node_modules/"
     )
 
     # Binary file extensions to never read as source. Cheap guard against
@@ -93,8 +115,12 @@ class Settings(BaseSettings):
     # ── Embedding throughput ──
     # We batch many texts into a single Ollama /api/embed call (the newer
     # batch endpoint), then run several batches in parallel.
-    EMBED_BATCH_SIZE: int = 64         # texts per Ollama /api/embed call
-    EMBED_WORKERS: int = 8             # parallel batches in flight (match OLLAMA_NUM_PARALLEL)
+    # Tuned for tunneled Ollama: 32 texts × 6 workers = 192 in flight is the
+    # sweet spot for mxbai-embed-large on Apple Silicon without saturating the
+    # tunnel or queueing inside Ollama (which only serves OLLAMA_NUM_PARALLEL
+    # requests concurrently per model).
+    EMBED_BATCH_SIZE: int = 32         # texts per Ollama /api/embed call
+    EMBED_WORKERS: int = 6             # parallel batches in flight (match OLLAMA_NUM_PARALLEL on Mac)
     EMBED_PROGRESS_EVERY: int = 50     # status update every N chunks during embedding
     # Set to true to skip the batch endpoint and go straight to per-text.
     DISABLE_BATCH_EMBED: bool = False

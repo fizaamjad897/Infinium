@@ -77,8 +77,21 @@ def _call_ollama_chat(
     context_window: int = 8192,
     timeout: int = 300,
     retries: int = 2,
+    num_predict: Optional[int] = None,
 ) -> dict:
-    """Call Ollama /api/chat endpoint with retry on transient errors."""
+    """Call Ollama /api/chat endpoint with retry on transient errors.
+
+    ``num_predict`` caps the model's output length (in tokens). Critical for
+    the dual-model reasoning step — without a cap, kimi happily generates
+    2000+ tokens of analysis that nobody reads, which dominates total latency.
+    """
+    options = {
+        "temperature": temperature,
+        "num_ctx": context_window,
+    }
+    if num_predict is not None and num_predict > 0:
+        options["num_predict"] = num_predict
+
     last_error = None
     for attempt in range(retries + 1):
         try:
@@ -88,10 +101,7 @@ def _call_ollama_chat(
                     "model": model,
                     "messages": messages,
                     "stream": False,
-                    "options": {
-                        "temperature": temperature,
-                        "num_ctx": context_window,
-                    },
+                    "options": options,
                 },
                 timeout=timeout,
             )
@@ -169,24 +179,35 @@ def _generate_dual_model(
     total_tokens = 0
 
     # ── Step 1: Code Reasoning (kimi-k2.5) ──
+    # Trim the context fed to reasoning — kimi only needs the highest-relevance
+    # chunks for analysis. Full context still goes to synthesis below for
+    # source citation. Roughly halves reasoning latency on big repos.
+    reasoning_chunks = chunks[: settings.REASONING_TOP_K]
+    reasoning_context = "\n\n".join(
+        f"[Source {i+1}] ({c.get('source', 'unknown')})\n{c.get('text', '')[:1500]}"
+        for i, c in enumerate(reasoning_chunks)
+    )
+
     reasoning_output = ""
     with StepTimer(trace, "code_reasoning", reasoning_model) as timer:
-        reasoning_prompt = f"""Analyze the following codebase context to answer this question:
+        reasoning_prompt = f"""Analyze the following codebase context to answer this question. Be concise — bullet points, not essays.
 
 Question: {query}
 
 Codebase Context:
-{context}
+{reasoning_context}
 {f"Conversation History: {conversation_context}" if conversation_context else ""}
 
-Provide a thorough analysis focusing on:
-- What the code does and why it was written this way
-- Key commits and their motivation
-- Architectural decisions and trade-offs
-- Connections between different files/components"""
+Cover only:
+- What the code does and why
+- Key commits / motivation (if relevant)
+- Architectural decisions / trade-offs
+- Cross-file connections
+
+Keep the entire response under ~400 words."""
 
         timer.input_text = reasoning_prompt
-        timer.chunks_count = len(chunks)
+        timer.chunks_count = len(reasoning_chunks)
 
         result = _call_ollama_chat(
             model=reasoning_model,
@@ -195,6 +216,7 @@ Provide a thorough analysis focusing on:
                 {"role": "user", "content": reasoning_prompt},
             ],
             temperature=settings.REASONING_TEMPERATURE,
+            num_predict=settings.REASONING_MAX_TOKENS,
         )
 
         if result.get("error"):
@@ -216,10 +238,17 @@ Provide a thorough analysis focusing on:
             repo_hint = f"\nNote: Context spans {len(repos_in_context)} repositories: {', '.join(repos_in_context)}. Cross-reference insights across repos when relevant."
 
         if reasoning_output:
+            # Trim the reasoning output before stitching into synthesis. If kimi
+            # ran long, the full text bloats the synthesis prompt and adds
+            # several seconds of processing for no quality gain.
+            trimmed_reasoning = reasoning_output.strip()
+            if len(trimmed_reasoning) > settings.REASONING_MAX_CHARS:
+                trimmed_reasoning = trimmed_reasoning[: settings.REASONING_MAX_CHARS] + "\n…[trimmed]"
+
             synthesis_prompt = f"""Based on the expert code analysis below and the original codebase context, provide a clear, well-structured answer.
 
 Expert Analysis:
-{reasoning_output}
+{trimmed_reasoning}
 
 Original Codebase Context:
 {context}

@@ -40,20 +40,23 @@ case "$ACTION" in
     echo "  Swagger docs:           http://$(hostname -I | awk '{print $1}'):8000/docs"
     echo "═══════════════════════════════════════════════"
     echo ""
-    echo "⚠️  First deploy? Run model setup:"
-    echo "  ./deploy.sh setup-models"
+    echo "ℹ️  This deploy uses a remote Ollama (your Mac) via OLLAMA_BASE_URL."
+    echo "    Models live on the Mac — pull them there, not here:"
+    echo "      ollama pull mxbai-embed-large"
+    echo "      ollama pull minimax-m2.7:cloud"
+    echo "      ollama pull kimi-k2.5:cloud"
+    echo "      ollama pull qwen3-coder:480b-cloud"
     ;;
 
-  setup-models)
-    echo "🔑  Logging into Ollama (cloud models)..."
-    docker compose exec ollama ollama login
-    echo "📥  Pulling embed model..."
-    docker compose exec ollama ollama pull mxbai-embed-large
-    echo "📥  Pulling cloud LLM (minimax)..."
-    docker compose exec ollama ollama pull minimax-m2.7:cloud
-    echo "📥  Pulling cloud reasoning model (kimi)..."
-    docker compose exec ollama ollama pull kimi-k2.5:cloud
-    echo "✅  Models ready!"
+  check-ollama)
+    URL=$(grep -E "^OLLAMA_BASE_URL=" .env | cut -d= -f2-)
+    if [ -z "$URL" ]; then
+      echo "❌ OLLAMA_BASE_URL not set in .env"
+      exit 1
+    fi
+    echo "🔎 Verifying remote Ollama at: $URL"
+    docker compose -f docker-compose.yml -f docker-compose.prod.yml exec backend \
+      python -c "import os, urllib.request, json; r=urllib.request.urlopen(os.environ['OLLAMA_BASE_URL']+'/api/tags', timeout=10).read(); d=json.loads(r); print('Models reachable:'); [print(' - '+m['name']) for m in d.get('models',[])]"
     ;;
 
   logs)
@@ -81,7 +84,7 @@ case "$ACTION" in
     ;;
 
   *)
-    echo "Usage: ./deploy.sh [deploy|setup-models|logs|logs-all|stop|restart|status]"
+    echo "Usage: ./deploy.sh [deploy|check-ollama|logs|logs-all|stop|restart|status]"
     exit 1
     ;;
 esac
