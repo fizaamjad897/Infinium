@@ -13,6 +13,29 @@ from backend.config import settings
 from backend.rag.reasoning import ReasoningTrace, StepTimer
 
 
+def _augment_with_memory(system_prompt: str, query: str, target_type: str = "query",
+                          repo_name: Optional[str] = None) -> str:
+    """Append feedback-memory examples (positive + negative) to a system prompt.
+
+    Returns the prompt unchanged if memory is disabled, errors, or has no signal.
+    Imported lazily so a hot reload of feedback doesn't crash this module on import.
+    """
+    try:
+        from backend.feedback.memory import recall, render_for_prompt
+    except Exception:
+        return system_prompt
+    try:
+        memory = recall(query, target_type=target_type, repo_name=repo_name,
+                        k_positive=settings.FEEDBACK_MEMORY_TOP_K_POS,
+                        k_negative=settings.FEEDBACK_MEMORY_TOP_K_NEG)
+        block = render_for_prompt(memory)
+        if not block:
+            return system_prompt
+        return system_prompt + "\n\n" + block
+    except Exception:
+        return system_prompt
+
+
 # ── System Prompts ──
 
 REASONING_SYSTEM_PROMPT = """You are an expert code analyst. Your job is to deeply analyze code, commits, commit diffs, branches, and documentation to understand WHY and HOW decisions were made in a software project.
@@ -220,10 +243,13 @@ Please answer based on the context above. Cite sources by their [Source N] numbe
         timer.input_text = synthesis_prompt
         timer.chunks_count = len(chunks)
 
+        repo_for_memory = next(iter(repos_in_context), None) if len(repos_in_context) == 1 else None
         result = _call_ollama_chat(
             model=synthesis_model,
             messages=[
-                {"role": "system", "content": SYNTHESIS_SYSTEM_PROMPT},
+                {"role": "system",
+                 "content": _augment_with_memory(SYNTHESIS_SYSTEM_PROMPT, query,
+                                                  target_type="query", repo_name=repo_for_memory)},
                 {"role": "user", "content": synthesis_prompt},
             ],
             temperature=settings.LLM_TEMPERATURE,
@@ -291,10 +317,13 @@ Please answer based on the context above. Cite sources by their [Source N] numbe
         timer.input_text = user_message
         timer.chunks_count = len(chunks)
 
+        repo_for_memory = next(iter(repos_in_context), None) if len(repos_in_context) == 1 else None
         result = _call_ollama_chat(
             model=model,
             messages=[
-                {"role": "system", "content": SINGLE_MODEL_SYSTEM_PROMPT},
+                {"role": "system",
+                 "content": _augment_with_memory(SINGLE_MODEL_SYSTEM_PROMPT, query,
+                                                  target_type="query", repo_name=repo_for_memory)},
                 {"role": "user", "content": user_message},
             ],
             temperature=settings.LLM_TEMPERATURE,
@@ -422,7 +451,7 @@ def generate_stream(
 
     # Step 2: Synthesis (Streaming)
     model = model_override or settings.LLM_MODEL
-    system_prompt = SYNTHESIS_SYSTEM_PROMPT
+    system_prompt = _augment_with_memory(SYNTHESIS_SYSTEM_PROMPT, query, target_type="query")
     user_content = f"Context from the codebase:\n{context}\n\n"
     if reasoning_content:
         user_content += f"Expert Analysis:\n{reasoning_content}\n\n"

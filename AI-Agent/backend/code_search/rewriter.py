@@ -10,6 +10,7 @@ from typing import Optional
 
 from backend.rag.retriever import hybrid_retrieve
 from backend.rag.generator import _call_ollama_chat
+from backend.feedback.memory import recall as _recall_feedback, render_for_prompt as _render_feedback
 from backend.config import settings
 
 
@@ -107,10 +108,16 @@ def rewrite_snippet(
         f"{context_block}"
     )
 
+    memory = _recall_feedback(instruction, target_type="rewrite", repo_name=repo_name,
+                              k_positive=settings.FEEDBACK_MEMORY_TOP_K_POS,
+                              k_negative=settings.FEEDBACK_MEMORY_TOP_K_NEG)
+    memory_block = _render_feedback(memory)
+    sys_prompt = REWRITE_SYSTEM_PROMPT + (("\n\n" + memory_block) if memory_block else "")
+
     chat = _call_ollama_chat(
         model=model or settings.LLM_MODEL,
         messages=[
-            {"role": "system", "content": REWRITE_SYSTEM_PROMPT},
+            {"role": "system", "content": sys_prompt},
             {"role": "user", "content": user_prompt},
         ],
         temperature=0.2,
@@ -120,6 +127,8 @@ def rewrite_snippet(
     parsed = _extract_code_and_meta(chat.get("content", ""))
     return {
         "rewritten_code": parsed["code"],
+        "memory_used": {"positive": len(memory.get("positive") or []),
+                         "negative": len(memory.get("negative") or [])},
         "rationale": parsed["rationale"],
         "risks": parsed["risks"],
         "model": model or settings.LLM_MODEL,
@@ -166,12 +175,21 @@ def explain_snippet(
         f"{context_block}"
     )
 
+    explain_memory = _recall_feedback(snippet[:200], target_type="explain", repo_name=repo_name,
+                                      k_positive=settings.FEEDBACK_MEMORY_TOP_K_POS,
+                                      k_negative=settings.FEEDBACK_MEMORY_TOP_K_NEG)
+    explain_memory_block = _render_feedback(explain_memory)
+    explain_system = (
+        "You are an expert code reviewer explaining code clearly and concisely. "
+        "Use short paragraphs and bullet points. Cite the file paths from any provided context."
+    )
+    if explain_memory_block:
+        explain_system += "\n\n" + explain_memory_block
+
     chat = _call_ollama_chat(
         model=model or settings.LLM_MODEL,
         messages=[
-            {"role": "system", "content": (
-                "You are an expert code reviewer explaining code clearly and concisely. "
-                "Use short paragraphs and bullet points. Cite the file paths from any provided context.")},
+            {"role": "system", "content": explain_system},
             {"role": "user", "content": user_prompt},
         ],
         temperature=0.2,
@@ -180,6 +198,8 @@ def explain_snippet(
 
     return {
         "explanation": chat.get("content", "").strip(),
+        "memory_used": {"positive": len(explain_memory.get("positive") or []),
+                         "negative": len(explain_memory.get("negative") or [])},
         "model": model or settings.LLM_MODEL,
         "context_sources": list(dict.fromkeys(context_sources)),
         "duration_ms": chat.get("duration_ms", 0),

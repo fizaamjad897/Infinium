@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from backend.code_search.symbol_finder import find_symbol, find_callers
 from backend.code_search.rewriter import rewrite_snippet, explain_snippet
+from backend.code_search.refactorer import refactor_function, refactor_file
 from backend.rag.query_engine import ask_all
 from backend.auth.jwt_handler import get_current_user_optional
 
@@ -184,4 +185,66 @@ async def cross_repo_query(
         top_k=req.top_k,
         user_login=login,
         interface="api",
+    )
+
+
+# ── Granular refactor (function or whole file) ──
+
+class RefactorRequest(BaseModel):
+    repo_name: str = Field(..., description="Repo to refactor in (must be cloned in repo_cache/)")
+    granularity: str = Field("function", description='"function" or "file"')
+    target: str = Field(
+        ...,
+        description='For granularity="function": symbol name (e.g. "login"). '
+                    'For granularity="file": path relative to repo root (e.g. "src/auth/login.py").',
+    )
+    file: Optional[str] = Field(
+        None,
+        description='Optional file path. For function granularity, lets the backend read the '
+                    'file from disk and AST-extract the function — works even for files skipped at ingest.',
+    )
+    code: Optional[str] = Field(
+        None,
+        description='Optional exact source for the function. When provided, no symbol lookup is done '
+                    '— the model receives this code as-is. Best for accuracy when the FE has it.',
+    )
+    instruction: str = Field(..., description="Refactor instruction in plain English")
+    model: Optional[str] = Field(None, description="Override model. Defaults to CODE_REFACTOR_MODEL.")
+    include_callers: bool = Field(True, description="(function only) include caller snippets as context")
+    use_neighbour_context: bool = Field(True, description="(file only) include similar files as style context")
+
+
+@router.post("/refactor")
+async def refactor_endpoint(
+    req: RefactorRequest,
+    current_user: Optional[dict] = Depends(get_current_user_optional),
+):
+    """Granular refactor — function-level or whole-file.
+
+    READ-ONLY: returns ``before``, ``after``, and a unified ``diff``. Nothing
+    is written to disk or pushed to GitHub. The caller is expected to display
+    the diff and let the user apply it manually.
+
+    Default model is ``qwen3-coder:480b-cloud`` — purpose-built for code edits
+    and consistently the strongest cloud option for refactor quality.
+    """
+    if req.granularity not in ("function", "file"):
+        return {"error": "granularity must be 'function' or 'file'"}
+
+    if req.granularity == "function":
+        return refactor_function(
+            repo_name=req.repo_name,
+            target=req.target,
+            instruction=req.instruction,
+            model=req.model,
+            include_callers=req.include_callers,
+            file=req.file,
+            code=req.code,
+        )
+    return refactor_file(
+        repo_name=req.repo_name,
+        target_path=req.target,
+        instruction=req.instruction,
+        model=req.model,
+        use_neighbour_context=req.use_neighbour_context,
     )

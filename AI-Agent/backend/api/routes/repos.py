@@ -278,3 +278,129 @@ async def estimate_ingest(req: EstimateRequest):
             "Fast — synchronous polling is fine."
         ),
     }
+
+
+# ── File tree + file content (for the Code Refactor UI) ──
+
+import os as _os
+from backend.ingestion.github_loader import (
+    SUPPORTED_EXTENSIONS as _SUPPORTED_EXTENSIONS,
+    IGNORE_DIRS as _IGNORE_DIRS,
+)
+
+
+def _repo_cache_path(repo_name: str) -> str:
+    return _os.path.join(settings.REPO_CACHE_DIR, repo_name.replace("/", "_"))
+
+
+@router.get("/{repo_name}/tree")
+async def get_repo_tree(
+    repo_name: str,
+    include_symbols: bool = True,
+    current_user: Optional[dict] = Depends(get_current_user_optional),
+):
+    """Return the file tree of a cloned repo, with functions/classes per file.
+
+    Reads directly from ``repo_cache/`` — works for files that were skipped at
+    ingest time. Used by the Code Refactor UI to render a VSCode-like tree.
+
+    Response shape:
+      {
+        "repo_name": "...",
+        "root": "...",
+        "files": [
+          {"path": "src/auth/login.py", "language": "py",
+           "symbols": [{"kind": "function", "name": "login", "start": 5, "end": 22}, ...]}
+        ]
+      }
+    """
+    root = _repo_cache_path(repo_name)
+    if not _os.path.isdir(root):
+        raise HTTPException(status_code=404, detail=f"Repo '{repo_name}' not in repo_cache. "
+                                                    "Ingest it first.")
+
+    from backend.ingestion.code_chunker import function_aware_chunks
+
+    files_out: list[dict] = []
+    for dirpath, dirnames, filenames in _os.walk(root):
+        # Skip noisy dirs in-place (mutating dirnames lets os.walk skip the subtree)
+        dirnames[:] = [d for d in dirnames if d not in _IGNORE_DIRS]
+        for name in filenames:
+            ext = _os.path.splitext(name)[1].lower()
+            if ext not in _SUPPORTED_EXTENSIONS:
+                continue
+            full = _os.path.join(dirpath, name)
+            try:
+                if _os.path.getsize(full) > 500_000:
+                    continue
+            except OSError:
+                continue
+            rel = _os.path.relpath(full, root).replace("\\", "/")
+
+            entry = {"path": rel, "language": ext.lstrip(".")}
+            if include_symbols:
+                try:
+                    with open(full, "r", encoding="utf-8", errors="ignore") as fh:
+                        content = fh.read()
+                    spans = function_aware_chunks(content, ext) or []
+                    entry["symbols"] = [
+                        {"kind": s["kind"], "name": s["name"],
+                         "start": s.get("start", 0), "end": s.get("end", 0)}
+                        for s in spans
+                        if s.get("kind") in ("function", "class") and s.get("name") and s["name"] != "<preamble>"
+                    ]
+                except Exception:
+                    entry["symbols"] = []
+            files_out.append(entry)
+
+    files_out.sort(key=lambda f: f["path"])
+    return {"repo_name": repo_name, "root": root, "files": files_out, "total": len(files_out)}
+
+
+@router.get("/{repo_name}/file")
+async def get_repo_file(
+    repo_name: str,
+    path: str,
+    current_user: Optional[dict] = Depends(get_current_user_optional),
+):
+    """Return the raw text of one file from a cloned repo, plus its detected
+    function/class spans. Used by the Code Refactor viewer."""
+    root = _repo_cache_path(repo_name)
+    if not _os.path.isdir(root):
+        raise HTTPException(status_code=404, detail=f"Repo '{repo_name}' not in repo_cache.")
+
+    # Path traversal guard
+    safe = _os.path.normpath(_os.path.join(root, path))
+    if not safe.startswith(root + _os.sep) and safe != root:
+        raise HTTPException(status_code=400, detail="Invalid path")
+    if not _os.path.isfile(safe):
+        raise HTTPException(status_code=404, detail=f"File not found: {path}")
+
+    try:
+        size = _os.path.getsize(safe)
+        if size > 1_000_000:
+            raise HTTPException(status_code=413, detail=f"File too large ({size} bytes)")
+        with open(safe, "r", encoding="utf-8", errors="ignore") as fh:
+            content = fh.read()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Read failed: {e}")
+
+    ext = _os.path.splitext(path)[1].lower()
+    from backend.ingestion.code_chunker import function_aware_chunks
+    spans = function_aware_chunks(content, ext) or []
+    symbols = [
+        {"kind": s["kind"], "name": s["name"],
+         "start": s.get("start", 0), "end": s.get("end", 0)}
+        for s in spans
+        if s.get("kind") in ("function", "class") and s.get("name") and s["name"] != "<preamble>"
+    ]
+    return {
+        "repo_name": repo_name,
+        "path": path,
+        "language": ext.lstrip("."),
+        "size": len(content),
+        "content": content,
+        "symbols": symbols,
+    }

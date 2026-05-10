@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     LLM_MODEL: str = "minimax-m2.7:cloud"
     CODE_REASONING_MODEL: str = "kimi-k2.5:cloud"
+    # Dedicated model for /api/code/refactor — Qwen3-Coder is purpose-built
+    # for code edits and consistently tops code benchmarks.
+    CODE_REFACTOR_MODEL: str = "qwen3-coder:480b-cloud"
     EMBED_MODEL: str = "mxbai-embed-large"
     BRANCH_EMBED_MODEL: str = "mxbai-embed-large"
 
@@ -102,6 +105,19 @@ class Settings(BaseSettings):
     # ── Retrieval throughput ──
     # For multi-repo queries, we run retrieval tasks in parallel.
     RETRIEVAL_WORKERS: int = 4
+
+    # ── Feedback memory (in-context reinforcement) ──
+    # When ON, every rated answer is embedded into a feedback_memory_<target_type>
+    # ChromaDB collection. On the next query/refactor/explain, similar high-rated
+    # entries are injected as few-shot examples. No model fine-tuning happens —
+    # this is purely prompt-time steering.
+    USE_FEEDBACK_MEMORY: bool = True
+    # Don't even try to recall until we have at least this many entries — below
+    # the threshold, retrieved examples are noise.
+    FEEDBACK_MEMORY_MIN_EXAMPLES: int = 5
+    # How many positive / negative few-shots to inject per call.
+    FEEDBACK_MEMORY_TOP_K_POS: int = 3
+    FEEDBACK_MEMORY_TOP_K_NEG: int = 1
 
     # ── Conversation ──
     MAX_CONVERSATION_TURNS: int = 10
