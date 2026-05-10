@@ -567,3 +567,53 @@ def get_collection_stats(repo_name: str) -> dict:
         return {"repo": repo_name, "chunks": count, "status": "indexed"}
     except Exception:
         return {"repo": repo_name, "chunks": 0, "status": "not_found"}
+
+
+def verify_collection_dims(expected_dim: Optional[int] = None) -> list[dict]:
+    """Scan every Chroma collection, peek one vector, and report any whose
+    dimension doesn't match the configured EMBED_MODEL. Logs warnings.
+
+    Called once at app startup so dimension drift is visible BEFORE the first
+    user query 500s. Returns the list of mismatches for programmatic use.
+    """
+    if expected_dim is None:
+        expected_dim = _get_vector_dim(settings.EMBED_MODEL)
+
+    try:
+        client = get_chroma_client()
+        cols = client.list_collections()
+    except Exception as e:
+        print(f"   ⚠️ Could not list Chroma collections at startup: {e}")
+        return []
+
+    mismatches: list[dict] = []
+    ok = 0
+    empty = 0
+    for col in cols:
+        try:
+            sample = col.peek(limit=1)
+            embs = sample.get("embeddings") or []
+            if not embs:
+                empty += 1
+                continue
+            dim = len(embs[0])
+            if dim != expected_dim:
+                mismatches.append({"name": col.name, "dim": dim, "expected": expected_dim})
+            else:
+                ok += 1
+        except Exception as e:
+            print(f"   ⚠️ Couldn't peek collection {col.name}: {e}")
+
+    if mismatches:
+        print(f"   ⚠️ Embedding-dim drift: {len(mismatches)} collection(s) built with a "
+              f"different model than current EMBED_MODEL={settings.EMBED_MODEL} (expects {expected_dim}-dim):")
+        for m in mismatches:
+            print(f"       · {m['name']}: stored {m['dim']}-dim, querying needs {m['expected']}-dim "
+                  f"→ re-ingest this repo, or delete the collection")
+        print(f"       Queries against these collections will return 0 results "
+              f"(graceful fallback — not a 500).")
+    else:
+        print(f"   ✅ All {ok} collections match EMBED_MODEL dim ({expected_dim})"
+              f"{f', {empty} empty' if empty else ''}")
+
+    return mismatches

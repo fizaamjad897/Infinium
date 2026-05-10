@@ -118,12 +118,25 @@ def retrieve_context(
     else:
         where_filter = {"$and": conditions}
 
-    results = collection.query(
-        query_embeddings=[query_embedding],
-        n_results=fetch_n,
-        include=["documents", "metadatas", "distances"],
-        where=where_filter,
-    )
+    try:
+        results = collection.query(
+            query_embeddings=[query_embedding],
+            n_results=fetch_n,
+            include=["documents", "metadatas", "distances"],
+            where=where_filter,
+        )
+    except Exception as e:
+        # Most common: dim mismatch (collection built with a different embed
+        # model than the one currently configured). Don't 500 the API —
+        # return zero matches and log a clear remediation note.
+        msg = str(e)
+        if "dimension" in msg.lower():
+            print(f"   ⚠️ Retrieval skipped for '{repo_name}': {msg}")
+            print(f"       → This collection was built with a different EMBED_MODEL. "
+                  f"Re-ingest it to fix.")
+        else:
+            print(f"   ⚠️ ChromaDB query failed for '{repo_name}': {msg}")
+        return []
 
     chunks = []
     for doc, meta, dist in zip(

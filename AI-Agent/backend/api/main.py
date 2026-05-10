@@ -76,6 +76,15 @@ def on_startup():
     print(f"   🌿 Branch Embed:    {settings.BRANCH_EMBED_MODEL}")
     print(f"   🔀 Dual-Model:      {'ON' if settings.USE_DUAL_MODEL else 'OFF'}")
 
+    # Verify Chroma collections match the configured embed model dimension.
+    # If a previous deploy used a different model, those collections will
+    # silently 500 every query — better to surface the mismatch at boot.
+    try:
+        from backend.ingestion.embedder import verify_collection_dims
+        verify_collection_dims()
+    except Exception as e:
+        print(f"   ⚠️ Could not verify collection dimensions: {e}")
+
 
 # ── Health & Root ──
 @app.get("/", tags=["System"])
