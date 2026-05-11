@@ -18,17 +18,19 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     LLM_MODEL: str = "minimax-m2.7:cloud"
     CODE_REASONING_MODEL: str = "kimi-k2.5:cloud"
-    # Dedicated model for /api/code/refactor — Qwen3-Coder is purpose-built
-    # for code edits and consistently tops code benchmarks.
-    CODE_REFACTOR_MODEL: str = "qwen3-coder:480b-cloud"
-    # Cap how many tokens qwen3-coder emits per refactor. Without it the
-    # 480B model generates until it runs out of ideas — 60-180s per call.
-    # 1024 covers a ~150-line function rewrite cleanly. Bump if you refactor
-    # very large files often.
-    REFACTOR_MAX_TOKENS: int = 1024
-    # HTTP timeout for the LLM call (per attempt). Cloud LLMs occasionally
-    # take a while; this just keeps us from giving up early.
-    REFACTOR_HTTP_TIMEOUT: int = 240
+    # Default refactor model — local code-specialised model on the Mac via
+    # Tailscale. Sub-30s per call, no cloud queue latency. For top-quality
+    # one-off refactors, pass {"model": "qwen3-coder:480b-cloud"} (the
+    # 480B "quality" model) in the request payload.
+    CODE_REFACTOR_MODEL: str = "qwen2.5-coder:14b"
+    CODE_REFACTOR_QUALITY_MODEL: str = "qwen3-coder:480b-cloud"
+    # Output cap: 512 tokens covers ~120 lines of rewritten code. File-level
+    # refactor uses 2× this internally.
+    REFACTOR_MAX_TOKENS: int = 512
+    REFACTOR_HTTP_TIMEOUT: int = 120
+    # Skip context bloat by default for speed. Opt in per-request when needed.
+    REFACTOR_DEFAULT_INCLUDE_CALLERS: bool = False
+    REFACTOR_USE_FEEDBACK_MEMORY: bool = False
     EMBED_MODEL: str = "mxbai-embed-large"
     BRANCH_EMBED_MODEL: str = "mxbai-embed-large"
 

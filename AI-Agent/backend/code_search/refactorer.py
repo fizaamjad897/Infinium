@@ -118,7 +118,7 @@ def refactor_function(
     target: str,
     instruction: str,
     model: Optional[str] = None,
-    include_callers: bool = True,
+    include_callers: Optional[bool] = None,
     file: Optional[str] = None,
     code: Optional[str] = None,
 ) -> dict:
@@ -165,7 +165,9 @@ def refactor_function(
         file_path = hit.get("file", "")
         language = hit.get("language", "") or ""
 
-    # Pull callers for context
+    # Pull callers for context (off by default for speed; opt in per request)
+    if include_callers is None:
+        include_callers = settings.REFACTOR_DEFAULT_INCLUDE_CALLERS
     caller_lines: list[str] = []
     if include_callers:
         try:
@@ -186,12 +188,12 @@ def refactor_function(
     if context_block:
         user_prompt += f"\nCALLER CONTEXT (do not modify, for awareness only):\n{context_block}\n"
 
-    # Pull in past-feedback memory (positive examples to emulate, negative to avoid)
-    memory = _recall_feedback(
+    # Pull past-feedback memory only when explicitly enabled — saves prompt size + time.
+    memory = (_recall_feedback(
         instruction, target_type="refactor", repo_name=repo_name,
         k_positive=settings.FEEDBACK_MEMORY_TOP_K_POS,
         k_negative=settings.FEEDBACK_MEMORY_TOP_K_NEG,
-    )
+    ) if settings.REFACTOR_USE_FEEDBACK_MEMORY else {"positive": [], "negative": []})
     memory_block = _render_feedback(memory)
     system_prompt = REFACTOR_SYSTEM_PROMPT + (("\n\n" + memory_block) if memory_block else "")
 
@@ -238,7 +240,7 @@ def refactor_file(
     target_path: str,
     instruction: str,
     model: Optional[str] = None,
-    use_neighbour_context: bool = True,
+    use_neighbour_context: Optional[bool] = None,
 ) -> dict:
     """Refactor a whole file.
 
@@ -252,7 +254,9 @@ def refactor_file(
     if original is None:
         return {"found": False, "reason": f"File '{target_path}' not found in repo_cache for {repo_name}"}
 
-    # Optional: pull a couple of similar/importing chunks for style cues.
+    # Skip neighbour context by default for speed; opt in per request.
+    if use_neighbour_context is None:
+        use_neighbour_context = settings.REFACTOR_DEFAULT_INCLUDE_CALLERS
     neighbours: list[str] = []
     if use_neighbour_context:
         try:
@@ -279,11 +283,11 @@ def refactor_file(
             + "\n"
         )
 
-    memory = _recall_feedback(
+    memory = (_recall_feedback(
         instruction, target_type="refactor", repo_name=repo_name,
         k_positive=settings.FEEDBACK_MEMORY_TOP_K_POS,
         k_negative=settings.FEEDBACK_MEMORY_TOP_K_NEG,
-    )
+    ) if settings.REFACTOR_USE_FEEDBACK_MEMORY else {"positive": [], "negative": []})
     memory_block = _render_feedback(memory)
     system_prompt = REFACTOR_SYSTEM_PROMPT + (("\n\n" + memory_block) if memory_block else "")
 
