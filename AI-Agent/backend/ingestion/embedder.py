@@ -592,11 +592,18 @@ def verify_collection_dims(expected_dim: Optional[int] = None) -> list[dict]:
     for col in cols:
         try:
             sample = col.peek(limit=1)
-            embs = sample.get("embeddings") or []
-            if not embs:
+            # Newer Chroma returns numpy arrays here. Use len() (works on both
+            # list and ndarray) instead of truthiness, which raises
+            # "ambiguous truth value" on multi-element ndarrays.
+            embs = sample.get("embeddings")
+            if embs is None or len(embs) == 0:
                 empty += 1
                 continue
-            dim = len(embs[0])
+            first = embs[0]
+            if first is None or len(first) == 0:
+                empty += 1
+                continue
+            dim = len(first)
             if dim != expected_dim:
                 mismatches.append({"name": col.name, "dim": dim, "expected": expected_dim})
             else:
