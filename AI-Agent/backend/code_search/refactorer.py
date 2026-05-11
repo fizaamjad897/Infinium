@@ -205,6 +205,8 @@ def refactor_function(
         ],
         temperature=0.1,
         context_window=settings.LLM_CONTEXT_WINDOW,
+        num_predict=settings.REFACTOR_MAX_TOKENS,
+        timeout=settings.REFACTOR_HTTP_TIMEOUT,
     )
     parsed = _parse_response(result.get("content", ""), symbol_code)
     diff = _make_diff(symbol_code, parsed["new_code"], file_path)
@@ -287,6 +289,7 @@ def refactor_file(
 
     chosen_model = model or settings.CODE_REFACTOR_MODEL
     t0 = time.time()
+    # File-level rewrites need ~2× tokens vs function-level.
     result = _call_ollama_chat(
         chosen_model,
         [
@@ -295,6 +298,8 @@ def refactor_file(
         ],
         temperature=0.1,
         context_window=max(settings.LLM_CONTEXT_WINDOW, 8192),
+        num_predict=settings.REFACTOR_MAX_TOKENS * 2,
+        timeout=settings.REFACTOR_HTTP_TIMEOUT,
     )
     parsed = _parse_response(result.get("content", ""), original)
     diff = _make_diff(original, parsed["new_code"], target_path)

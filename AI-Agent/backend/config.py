@@ -21,6 +21,14 @@ class Settings(BaseSettings):
     # Dedicated model for /api/code/refactor — Qwen3-Coder is purpose-built
     # for code edits and consistently tops code benchmarks.
     CODE_REFACTOR_MODEL: str = "qwen3-coder:480b-cloud"
+    # Cap how many tokens qwen3-coder emits per refactor. Without it the
+    # 480B model generates until it runs out of ideas — 60-180s per call.
+    # 1024 covers a ~150-line function rewrite cleanly. Bump if you refactor
+    # very large files often.
+    REFACTOR_MAX_TOKENS: int = 1024
+    # HTTP timeout for the LLM call (per attempt). Cloud LLMs occasionally
+    # take a while; this just keeps us from giving up early.
+    REFACTOR_HTTP_TIMEOUT: int = 240
     EMBED_MODEL: str = "mxbai-embed-large"
     BRANCH_EMBED_MODEL: str = "mxbai-embed-large"
 
