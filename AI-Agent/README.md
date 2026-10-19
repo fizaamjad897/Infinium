@@ -31,8 +31,8 @@ ollama run kimi-k2.5:cloud
 
 ```bash
 cd AI-Agent
-# .env is already configured — just verify it exists:
-cat .env
+# Create your own development configuration; never print or commit secret values.
+cp .env.example .env
 ```
 
 ### 4. Install Dependencies & Run

@@ -1,0 +1,22 @@
+name: Bug report
+description: Report a reproducible problem
+body:
+  - type: textarea
+    id: context
+    attributes:
+      label: Problem and context
+      description: Include component, branch/commit and runtime versions. Use synthetic data only.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Steps and expected behavior
+      description: For a bug, include reproduction and actual result. For an idea, explain the user benefit.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Logs or verification
+      description: Remove credentials, private code and personal data before posting.

@@ -1,0 +1,1714 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Infinium — Motion Reel</title>
+<meta name="description" content="Motion graphics reel for Infinium, an autonomous reasoning agent for developer knowledge intelligence.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   INFINIUM — MOTION REEL
+   Palette, type and component geometry mirror the shipped app
+   (styles/theme.css, styles/blueprint.css, styles/fonts.css).
+   ============================================================ */
+
+:root{
+  /* Product tokens — lifted verbatim from theme.css */
+  --paper:#FFFFFF;
+  --ink:#0F172A;
+  --blue:#1E3A8A;
+  --cyan:#38BDF8;
+  --amber:#FACC15;
+  --muted:#64748B;
+  --line:#E2E8F0;
+  --steel:#CBD5E1;
+  --soft:#F8FAFC;
+  --tint:#F1F5FF;
+  --red:#EF4444;
+  --green:#10B981;
+  --violet:#8B5CF6;
+
+  /* Studio chrome — the frame around the product */
+  /* The dossier column this reel sits in is very nearly square, so a 16:9
+     stage letterboxes hard and the white paper reads as a slab floating in
+     black. The sheet is square instead: the drawing keeps its own 16:9 plate
+     in the middle, and the bands above and below become the titleblock - the
+     language the scenes were already annotated in. */
+  --stage-w:1200px;
+  --stage-h:1200px;
+  --plate-w:1600px;
+  --plate-h:900px;
+  --plate-scale:0.75;   /* 1200 / 1600 */
+  --studio:#070C16;
+  --studio-2:#0D1524;
+  --studio-line:rgba(56,189,248,.14);
+  --studio-fg:#E6EDF7;
+  --studio-dim:#7E8CA3;
+
+  --font-display:'Space Grotesk',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --font-body:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --font-mono:'JetBrains Mono',ui-monospace,'SFMono-Regular','Courier New',monospace;
+
+  --ease:cubic-bezier(.16,1,.3,1);
+  --ease-io:cubic-bezier(.65,0,.35,1);
+}
+
+*,*::before,*::after{box-sizing:border-box;}
+html,body{height:100%;}
+body{
+  margin:0;
+  background:var(--studio);
+  color:var(--studio-fg);
+  font-family:var(--font-body);
+  overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+}
+
+/* Browser surfaces themed to the palette */
+::selection{background:rgba(56,189,248,.28);color:#fff;}
+:where(a,button,[tabindex]):focus-visible{outline:2px solid var(--cyan);outline-offset:3px;border-radius:2px;}
+::-webkit-scrollbar{width:10px;height:10px;}
+::-webkit-scrollbar-track{background:var(--studio-2);}
+::-webkit-scrollbar-thumb{background:#25344D;border:2px solid var(--studio-2);border-radius:99px;}
+::-webkit-scrollbar-thumb:hover{background:#33465F;}
+
+/* ── Studio shell ───────────────────────────────────────── */
+.studio{
+  position:fixed;inset:0;
+  display:grid;
+  grid-template-rows:auto 1fr auto;
+  background:
+    radial-gradient(120% 80% at 50% -10%,rgba(30,58,138,.35),transparent 60%),
+    linear-gradient(180deg,var(--studio-2),var(--studio) 45%);
+}
+.studio::before{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background-image:
+    linear-gradient(var(--studio-line) 1px,transparent 1px),
+    linear-gradient(90deg,var(--studio-line) 1px,transparent 1px);
+  background-size:48px 48px;
+  mask-image:radial-gradient(90% 70% at 50% 40%,#000,transparent 78%);
+  opacity:.5;
+}
+
+.studio-bar,.transport{position:relative;z-index:3;transition:opacity .35s var(--ease),transform .35s var(--ease);}
+body.bare .studio-bar{opacity:0;transform:translateY(-14px);pointer-events:none;}
+body.bare .transport{opacity:0;transform:translateY(14px);pointer-events:none;}
+body.bare .studio::before{opacity:.22;}
+
+.studio-bar{
+  display:flex;align-items:center;justify-content:space-between;gap:24px;
+  padding:16px 28px;
+  border-bottom:1px solid rgba(255,255,255,.07);
+}
+.sb-brand{display:flex;align-items:center;gap:11px;}
+.sb-brand .ico{width:26px;height:26px;color:var(--cyan);}
+.sb-name{font-family:var(--font-display);font-weight:600;font-size:17px;letter-spacing:-.01em;color:#fff;}
+.sb-tag{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--studio-dim);border-left:1px solid rgba(255,255,255,.14);padding-left:11px;margin-left:3px;}
+.sb-meta{display:flex;align-items:center;gap:22px;font-family:var(--font-mono);font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--studio-dim);}
+.sb-meta b{color:var(--studio-fg);font-weight:500;}
+
+/* ── Stage ──────────────────────────────────────────────── */
+.stage-wrap{position:relative;z-index:2;display:grid;place-items:center;padding:22px;min-height:0;}
+.stage-frame{position:relative;}
+.stage{
+  position:relative;
+  width:var(--stage-w);height:var(--stage-h);
+  transform-origin:center center;
+  background:var(--paper);
+  color:var(--ink);
+  overflow:hidden;
+  box-shadow:0 40px 90px -20px rgba(0,0,0,.75),0 0 0 1px rgba(255,255,255,.09),0 0 90px -30px rgba(56,189,248,.35);
+  /* blueprint-bg, verbatim from blueprint.css */
+  background-image:
+    linear-gradient(rgba(226,232,240,.5) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(226,232,240,.5) 1px,transparent 1px);
+  background-size:20px 20px;
+}
+
+.scene{
+  position:absolute;inset:0;
+  opacity:0;visibility:hidden;
+  transform:scale(1.012);filter:blur(7px);
+  transition:opacity .55s var(--ease),filter .55s var(--ease),transform .55s var(--ease),visibility 0s .55s;
+}
+.scene.is-active{opacity:1;visibility:visible;transform:none;filter:none;transition-delay:0s;}
+
+/* ── Motion primitives (default state = final state) ────── */
+.a-up{animation:aUp 0.665s var(--ease) backwards;animation-delay:var(--d,0s);}
+@keyframes aUp{from{opacity:0;transform:translateY(20px);}}
+.a-dn{animation:aDn 0.665s var(--ease) backwards;animation-delay:var(--d,0s);}
+@keyframes aDn{from{opacity:0;transform:translateY(-18px);}}
+.a-in{animation:aIn 0.56s var(--ease) backwards;animation-delay:var(--d,0s);}
+@keyframes aIn{from{opacity:0;}}
+.a-lf{animation:aLf 0.63s var(--ease) backwards;animation-delay:var(--d,0s);}
+@keyframes aLf{from{opacity:0;transform:translateX(-26px);}}
+.a-rt{animation:aRt 0.63s var(--ease) backwards;animation-delay:var(--d,0s);}
+@keyframes aRt{from{opacity:0;transform:translateX(26px);}}
+.a-pop{animation:aPop 0.56s var(--ease) backwards;animation-delay:var(--d,0s);}
+@keyframes aPop{from{opacity:0;transform:scale(.9);}}
+.a-blur{animation:aBlur 0.77s var(--ease) backwards;animation-delay:var(--d,0s);}
+@keyframes aBlur{from{opacity:0;filter:blur(14px);transform:scale(1.04);}}
+.a-wipe{animation:aWipe 0.7s var(--ease) backwards;animation-delay:var(--d,0s);}
+@keyframes aWipe{from{clip-path:inset(0 100% 0 0);}}
+.a-wipe-up{animation:aWipeUp 0.735s var(--ease) backwards;animation-delay:var(--d,0s);}
+@keyframes aWipeUp{from{clip-path:inset(105% 0 0 0);transform:translateY(14px);}}
+.a-grow{animation:aGrow 0.805s var(--ease) backwards;animation-delay:var(--d,0s);transform-origin:left center;}
+@keyframes aGrow{from{transform:scaleX(0);}}
+.a-riseh{animation:aRiseH 0.77s var(--ease) backwards;animation-delay:var(--d,0s);transform-origin:bottom center;}
+@keyframes aRiseH{from{transform:scaleY(0);opacity:.4;}}
+.a-draw{animation:aDraw 0.98s var(--ease-io) backwards;animation-delay:var(--d,0s);}
+@keyframes aDraw{from{stroke-dashoffset:var(--len,600);}}
+
+/* ambient loops */
+.pulse-dot{animation:pulseDot 1.4s ease-in-out infinite;}
+@keyframes pulseDot{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.45;transform:scale(1.15);}}
+.dash-run{stroke-dasharray:5 5;animation:dashRun 14s linear infinite;}
+@keyframes dashRun{to{stroke-dashoffset:-100;}}
+.drift{animation:drift 6.3s ease-in-out infinite alternate;}
+@keyframes drift{to{transform:translate(var(--dx,6px),var(--dy,-8px));}}
+.spin{animation:spin 0.7s linear infinite;transform-origin:center;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.caret::after{content:"";display:inline-block;width:2px;height:1em;background:var(--blue);margin-left:2px;vertical-align:-.14em;animation:blink 0.7s steps(2) infinite;}
+@keyframes blink{50%{opacity:0;}}
+
+body.paused .stage *{animation-play-state:paused!important;}
+body.paused .scene{transition-duration:0s;}
+
+/* ── Product primitives (match the shipped components) ─── */
+.ico{display:inline-flex;flex:none;}
+.ico svg{width:100%;height:100%;display:block;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;}
+.ico.fill svg{fill:currentColor;stroke:none;}
+
+.bp-label{font-family:var(--font-mono);font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);}
+.bp-card{background:var(--paper);border:1.5px solid var(--blue);box-shadow:0 0 0 1px rgba(30,58,138,.1);border-radius:2px;}
+.bp-card.hot{border-color:var(--cyan);box-shadow:0 0 0 2px rgba(56,189,248,.3),0 4px 12px rgba(30,58,138,.08);}
+.rule{width:100%;height:1px;background:var(--line);}
+.tick{width:4px;height:26px;background:var(--cyan);flex:none;}
+.tick.blue{background:var(--blue);}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font-family:var(--font-body);font-size:14px;font-weight:500;border-radius:6px;padding:10px 18px;border:2px solid transparent;}
+.btn-primary{background:var(--blue);color:#fff;border-color:var(--blue);}
+.btn-outline{background:transparent;color:var(--blue);border-color:var(--blue);}
+.btn-quiet{background:transparent;color:var(--ink);border-color:var(--steel);}
+
+.badge{display:inline-flex;align-items:center;gap:7px;border:2px solid var(--cyan);color:var(--cyan);border-radius:6px;padding:4px 11px;font-size:12px;font-weight:500;}
+.dot{width:8px;height:8px;border-radius:99px;background:var(--cyan);flex:none;}
+
+h1,h2,h3,h4{font-family:var(--font-display);margin:0;letter-spacing:-.022em;}
+p{margin:0;}
+
+/* Corner brackets — blueprint-brackets */
+.brackets{position:relative;}
+.brackets::before,.brackets::after{content:"";position:absolute;width:14px;height:14px;border:1.5px solid var(--blue);}
+.brackets::before{top:-9px;left:-9px;border-right:none;border-bottom:none;}
+.brackets::after{bottom:-9px;right:-9px;border-left:none;border-top:none;}
+
+/* Screen shell used by app-recreation scenes */
+.app{position:absolute;inset:0;display:flex;background:var(--paper);
+  background-image:linear-gradient(rgba(226,232,240,.5) 1px,transparent 1px),linear-gradient(90deg,rgba(226,232,240,.5) 1px,transparent 1px);
+  background-size:20px 20px;}
+.side{width:270px;flex:none;background:var(--paper);border-right:2px solid var(--blue);display:flex;flex-direction:column;}
+.side-logo{padding:22px 24px;border-bottom:2px solid var(--line);display:flex;align-items:center;gap:10px;}
+.side-logo .ico{width:32px;height:32px;color:var(--blue);}
+.side-logo h4{font-size:20px;font-weight:600;color:var(--ink);letter-spacing:-.02em;}
+.side-nav{flex:1;padding:14px;display:flex;flex-direction:column;gap:3px;}
+.nav-i{position:relative;display:flex;align-items:center;gap:12px;padding:9px 13px;border-radius:6px;color:var(--muted);font-size:13.5px;}
+.nav-i .ico{width:19px;height:19px;}
+.nav-i.on{background:var(--blue);color:#fff;}
+.nav-i.on::before{content:"";position:absolute;left:-14px;top:0;bottom:0;width:4px;background:var(--cyan);border-radius:0 3px 3px 0;}
+.side-foot{padding:14px;border-top:2px solid var(--line);}
+.usr{display:flex;align-items:center;gap:11px;padding:11px;border:2px solid var(--steel);border-radius:2px;}
+.avatar{width:38px;height:38px;border-radius:99px;background:var(--blue);border:2px solid var(--cyan);color:#fff;display:grid;place-items:center;font-weight:600;font-size:13px;flex:none;}
+.avatar.grad{background:linear-gradient(135deg,var(--blue),var(--cyan));border:none;}
+
+.main{flex:1;display:flex;flex-direction:column;min-width:0;}
+.app-head{background:var(--paper);border-bottom:2px solid var(--blue);padding:20px 34px;display:flex;align-items:center;justify-content:space-between;gap:20px;flex:none;}
+.app-head h1{font-size:30px;font-weight:700;color:var(--ink);}
+.app-head .sub{font-size:13.5px;color:var(--muted);margin-top:3px;}
+.hd-l{display:flex;align-items:center;gap:13px;}
+.tick.tall{height:34px;}
+.app-body{flex:1;padding:22px 34px;display:flex;flex-direction:column;gap:16px;min-height:0;}
+
+.stat{padding:17px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;}
+.stat .v{font-size:32px;font-weight:700;color:var(--ink);margin-top:6px;font-family:var(--font-display);font-variant-numeric:tabular-nums;letter-spacing:-.03em;}
+.sq{width:46px;height:46px;border:2px solid var(--blue);border-radius:2px;display:grid;place-items:center;color:var(--blue);flex:none;}
+.sq .ico{width:22px;height:22px;}
+.sq.cy{border-color:var(--cyan);color:var(--cyan);}
+.sq.am{border-color:var(--amber);color:var(--amber);}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+
+.h2row{display:flex;align-items:center;gap:10px;margin-bottom:12px;}
+.h2row h2{font-size:19px;font-weight:600;color:var(--ink);}
+.h2row .tick{height:22px;width:4px;background:var(--blue);}
+
+.item{border:2px solid var(--line);border-radius:2px;padding:10px 14px;}
+.item.hot{border-color:var(--cyan);}
+.mono-xs{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);}
+
+/* Annotation system — the reel's own voice, drawn in the product's language */
+.anno{position:absolute;font-family:var(--font-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);}
+.anno.blue{color:var(--blue);}
+
+/* ── Transport ──────────────────────────────────────────── */
+.transport{padding:14px 28px 20px;border-top:1px solid rgba(255,255,255,.07);display:flex;flex-direction:column;gap:12px;}
+.track{display:flex;gap:4px;height:4px;}
+.seg{flex:1;background:rgba(255,255,255,.11);border-radius:99px;overflow:hidden;cursor:pointer;position:relative;}
+.seg span{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--blue),var(--cyan));border-radius:99px;}
+.seg.done span{width:100%;}
+.tp-row{display:flex;align-items:center;gap:18px;}
+.tp-btns{display:flex;align-items:center;gap:8px;}
+.tp-b{width:38px;height:38px;border-radius:99px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.05);color:var(--studio-fg);display:grid;place-items:center;cursor:pointer;transition:background .2s,border-color .2s,color .2s;}
+.tp-b:hover{background:rgba(56,189,248,.16);border-color:rgba(56,189,248,.45);color:#fff;}
+.tp-b .ico{width:17px;height:17px;}
+.tp-b.play{width:46px;height:46px;background:var(--cyan);border-color:var(--cyan);color:#04121F;}
+.tp-b.play:hover{background:#5CCBFA;}
+.tp-b.play .ico{width:19px;height:19px;}
+.chapters{display:flex;gap:6px;flex:1;overflow:hidden;}
+.ch{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:7px 11px;border-radius:99px;border:1px solid rgba(255,255,255,.12);color:var(--studio-dim);background:transparent;cursor:pointer;white-space:nowrap;transition:all .2s;}
+.ch:hover{color:var(--studio-fg);border-color:rgba(255,255,255,.3);}
+.ch.on{background:rgba(56,189,248,.15);border-color:rgba(56,189,248,.5);color:#BEE7FC;}
+.tp-time{font-family:var(--font-mono);font-size:12px;letter-spacing:.08em;color:var(--studio-dim);font-variant-numeric:tabular-nums;}
+.tp-time b{color:var(--studio-fg);font-weight:500;}
+.tp-keys{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:rgba(126,140,163,.75);}
+.tp-keys kbd{font:inherit;border:1px solid rgba(255,255,255,.16);border-radius:3px;padding:1px 5px;margin:0 1px;}
+
+/* ── Embed contract ──────────────────────────────────────
+   The same two flags every reel in public/motion/ answers to, so the
+   portfolio can host any of them without knowing which is which.
+
+   `bare` already existed here but only faded the chrome out - it kept its
+   layout box, which costs a thumbnail most of its height. These rules take
+   the box away too, and fit() is re-run so the stage claims the space. */
+/* .studio is `grid-template-rows: auto 1fr auto` for bar / stage / transport.
+   Removing a row's element does not remove the row, so the stage would inherit
+   an `auto` track and collapse to nothing. Restate the tracks per mode. */
+body.is-embed .studio{grid-template-rows:1fr auto;}
+body.is-bare  .studio{grid-template-rows:1fr;}
+
+/* Every scene's children are absolutely positioned against a 1600x900 canvas,
+   so the canvas is kept and scaled as a unit rather than the scenes being
+   re-laid-out. The wrapper is inserted at boot, so scene markup is untouched. */
+.plate{
+  position:absolute;left:50%;top:50%;
+  width:var(--plate-w);height:var(--plate-h);
+  transform:translate(-50%,-50%) scale(var(--plate-scale));
+}
+
+.tb{position:absolute;left:0;right:0;z-index:2;padding:0 62px;
+  font-family:var(--font-mono);color:var(--muted);
+  display:flex;align-items:center;justify-content:space-between;gap:24px;}
+.tb-head{top:0;height:262px;align-items:flex-start;padding-top:56px;}
+.tb-foot{bottom:0;height:262px;align-items:flex-end;padding-bottom:56px;}
+/* The sheet titleblock now carries the figure number, the scene name and the
+   department line, so the scenes' own corner annotations would just say all of
+   it a second time, an inch further in. */
+.plate .anno{display:none;}
+
+.tb-rule{position:absolute;left:62px;right:62px;height:1px;background:var(--steel);opacity:.85;}
+.tb-head .tb-rule{bottom:34px;}
+.tb-foot .tb-rule{top:34px;}
+.tb-ticks{position:absolute;display:flex;gap:9px;align-items:flex-end;height:13px;}
+.tb-head .tb-ticks{bottom:35px;left:62px;}
+.tb-foot .tb-ticks{top:22px;right:62px;}
+.tb-ticks i{width:1px;height:6px;background:var(--steel);}
+.tb-ticks i:nth-child(5n+1){height:13px;background:var(--blue);opacity:.55;}
+.tb-brand{display:flex;align-items:center;gap:15px;}
+.tb-brand .ico{width:42px;height:42px;color:var(--blue);}
+.tb-word{font-family:var(--font-display);font-size:34px;font-weight:600;
+  color:var(--ink);letter-spacing:-.03em;line-height:1;}
+.tb-sub{font-size:12px;letter-spacing:.2em;text-transform:uppercase;margin-top:7px;}
+.tb-r{text-align:right;}
+.tb-scene{font-size:19px;color:var(--ink);letter-spacing:.03em;text-transform:uppercase;}
+.tb-fig{font-size:12px;letter-spacing:.2em;text-transform:uppercase;margin-top:8px;}
+.tb-note{font-size:12px;letter-spacing:.16em;text-transform:uppercase;}
+
+body.is-embed .studio-bar{display:none;}
+body.is-embed .chapters,
+body.is-embed .tp-keys{display:none;}
+body.is-embed .transport{padding:8px 14px 10px;gap:8px;}
+body.is-embed .tp-row{gap:11px;}
+body.is-embed .tp-b{width:30px;height:30px;}
+body.is-embed .tp-b .ico{width:13px;height:13px;}
+body.is-embed .tp-b.play{width:34px;height:34px;}
+body.is-embed .tp-b.play .ico{width:15px;height:15px;}
+body.is-embed .tp-time{font-size:10.5px;}
+body.is-embed .stage-wrap{padding:0;}
+
+body.is-bare .studio-bar,
+body.is-bare .transport{display:none;}
+
+@media (max-width:620px){
+  body.is-embed .tp-time{display:none;}
+}
+
+@media (prefers-reduced-motion:reduce){
+  .pulse-dot,.dash-run,.drift,.spin,.caret::after{animation:none!important;}
+}
+</style>
+</head>
+<body>
+<div class="studio">
+
+  <header class="studio-bar">
+    <div class="sb-brand">
+      <i class="ico" data-icon="brain"></i>
+      <span class="sb-name">Infinium</span>
+      <span class="sb-tag">Motion Reel</span>
+    </div>
+    <div class="sb-meta">
+      <span>Autonomous Reasoning Agent</span>
+      <span><b>UET Lahore</b> · FYP 2025–26</span>
+    </div>
+  </header>
+
+  <div class="stage-wrap"><div class="stage-frame"><div class="stage" id="stage">
+
+<!-- ══════════════════ SCENE 0 — IDENT ══════════════════ -->
+<section class="scene" data-scene data-name="Ident" data-dur="5300">
+  <svg class="abs" viewBox="0 0 1600 900" style="position:absolute;inset:0;width:100%;height:100%;">
+    <line class="a-draw" style="--len:1600;--d:0.105s" x1="0" y1="450" x2="1600" y2="450" stroke="#1E3A8A" stroke-width="1" opacity=".28" stroke-dasharray="1600"/>
+    <line class="a-draw" style="--len:900;--d:0.21s" x1="800" y1="0" x2="800" y2="900" stroke="#1E3A8A" stroke-width="1" opacity=".28" stroke-dasharray="900"/>
+    <circle class="a-pop" style="--d:0.91s" cx="800" cy="450" r="250" fill="none" stroke="#38BDF8" stroke-width="1" opacity=".28" stroke-dasharray="5 5"/>
+    <circle class="a-pop" style="--d:1.05s" cx="800" cy="450" r="330" fill="none" stroke="#1E3A8A" stroke-width="1" opacity=".14"/>
+  </svg>
+
+  <div style="position:absolute;inset:0;display:grid;place-items:center;">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:26px;">
+      <div class="ico a-blur" data-icon="brain-draw" style="--d:0.175s;width:104px;height:104px;color:var(--blue);"></div>
+      <div style="overflow:hidden;">
+        <h1 class="a-wipe-up" style="--d:0.63s;font-size:104px;font-weight:600;color:var(--ink);letter-spacing:-.045em;line-height:1;">Infinium</h1>
+      </div>
+      <div class="a-in" style="--d:1.05s;font-family:var(--font-mono);font-size:13px;color:var(--muted);text-transform:uppercase;animation:trackIn 1.12s var(--ease) backwards;animation-delay:1.05s;">Knowledge&nbsp;AI</div>
+      <div class="a-in" style="--d:1.4s;display:flex;align-items:center;gap:14px;margin-top:6px;">
+        <span style="width:52px;height:1px;background:var(--steel);"></span>
+        <span style="font-size:15px;color:var(--muted);letter-spacing:.01em;">Autonomous Reasoning Agent for Developer Knowledge Intelligence</span>
+        <span style="width:52px;height:1px;background:var(--steel);"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="anno blue a-in" style="--d:1.68s;top:52px;left:56px;">Fig. 01 — Identity</div>
+  <div class="anno a-in" style="--d:1.785s;top:52px;right:56px;">Scale 1:1</div>
+  <div class="anno a-in" style="--d:1.89s;bottom:52px;left:56px;">UET Lahore · Dept. of Computer Science</div>
+  <div class="anno a-in" style="--d:1.995s;bottom:52px;right:56px;">v1.0.0</div>
+
+  <div class="a-in" style="--d:1.61s;position:absolute;bottom:96px;left:50%;transform:translateX(-50%);display:flex;align-items:flex-end;gap:9px;height:16px;">
+    <span style="width:1px;height:16px;background:var(--blue);opacity:.5"></span>
+    <span style="width:1px;height:8px;background:var(--steel)"></span><span style="width:1px;height:8px;background:var(--steel)"></span>
+    <span style="width:1px;height:8px;background:var(--steel)"></span><span style="width:1px;height:8px;background:var(--steel)"></span>
+    <span style="width:1px;height:16px;background:var(--blue);opacity:.5"></span>
+    <span style="width:1px;height:8px;background:var(--steel)"></span><span style="width:1px;height:8px;background:var(--steel)"></span>
+    <span style="width:1px;height:8px;background:var(--steel)"></span><span style="width:1px;height:8px;background:var(--steel)"></span>
+    <span style="width:1px;height:16px;background:var(--blue);opacity:.5"></span>
+  </div>
+
+  <div class="brackets a-in" style="--d:1.54s;position:absolute;inset:40px;pointer-events:none;"></div>
+</section>
+
+<!-- ══════════════════ SCENE 1 — PREMISE ══════════════════ -->
+<section class="scene" data-scene data-name="Premise" data-dur="6400">
+  <svg id="lattice" viewBox="0 0 1600 900" style="position:absolute;inset:0;width:100%;height:100%;">
+    <g stroke="#38BDF8" stroke-width="1.2" fill="none" opacity=".9">
+      <line class="a-draw" style="--len:700;--d:3.78s" x1="1465" y1="167" x2="1155" y2="217" stroke-dasharray="700"/>
+      <line class="a-draw" style="--len:700;--d:3.885s" x1="1155" y1="217" x2="1342" y2="317" stroke-dasharray="700"/>
+      <line class="a-draw" style="--len:700;--d:3.99s" x1="1155" y1="217" x2="1205" y2="457" stroke-dasharray="700"/>
+      <line class="a-draw" style="--len:700;--d:4.095s" x1="1342" y1="317" x2="1205" y2="457" stroke-dasharray="700"/>
+      <line class="a-draw" style="--len:700;--d:4.2s" x1="1205" y1="457" x2="1385" y2="567" stroke-dasharray="700"/>
+      <line class="a-draw" style="--len:700;--d:4.305s" x1="1205" y1="457" x2="1057" y2="627" stroke-dasharray="700"/>
+      <line class="a-draw" style="--len:700;--d:4.41s" x1="1385" y1="567" x2="1057" y2="627" stroke-dasharray="700"/>
+    </g>
+  </svg>
+
+  <div style="position:absolute;left:96px;top:0;bottom:0;width:640px;display:flex;flex-direction:column;justify-content:center;gap:22px;">
+    <div style="overflow:hidden;"><h1 class="a-wipe-up" style="--d:0.245s;font-size:62px;font-weight:700;line-height:1.05;color:var(--ink);">Every answer your<br>team needs</h1></div>
+    <div style="overflow:hidden;"><h1 class="a-wipe-up" style="--d:0.805s;font-size:62px;font-weight:700;line-height:1.05;color:var(--blue);">is already written down.</h1></div>
+    <p class="a-up" style="--d:1.47s;font-size:19px;line-height:1.65;color:var(--muted);max-width:33ch;margin-top:8px;">In four thousand commits. In a closed pull request. In a decision nobody wrote down twice.</p>
+    <div class="a-up" style="--d:3.92s;display:flex;align-items:center;gap:13px;margin-top:14px;">
+      <span class="tick"></span>
+      <span style="font-size:20px;font-weight:600;color:var(--ink);font-family:var(--font-display);letter-spacing:-.02em;">Infinium makes it answerable.</span>
+    </div>
+  </div>
+
+  <div id="nodeCloud" style="position:absolute;right:0;top:0;width:800px;height:900px;">
+    <div class="node-chip a-pop drift" style="--d:1.12s;--dx:-9px;--dy:7px;left:280px;top:200px;"><i class="ico" data-icon="git-commit"></i>commit a3f19c2</div>
+    <div class="node-chip a-pop drift" style="--d:1.295s;--dx:8px;--dy:-6px;left:490px;top:300px;"><i class="ico" data-icon="git-branch"></i>PR #412</div>
+    <div class="node-chip a-pop drift" style="--d:1.47s;--dx:-6px;--dy:-9px;left:320px;top:440px;"><i class="ico" data-icon="file-text"></i>ARCHITECTURE.md</div>
+    <div class="node-chip a-pop drift" style="--d:1.645s;--dx:7px;--dy:8px;left:530px;top:550px;"><i class="ico" data-icon="alert"></i>issue #98</div>
+    <div class="node-chip a-pop drift" style="--d:1.82s;--dx:-8px;--dy:5px;left:160px;top:610px;"><i class="ico" data-icon="code"></i>auth/jwt_handler.py</div>
+    <div class="node-chip a-pop drift" style="--d:1.995s;--dx:6px;--dy:-7px;left:600px;top:150px;"><i class="ico" data-icon="git-branch"></i>feat/oauth</div>
+  </div>
+  <style>
+    .node-chip{position:absolute;display:inline-flex;align-items:center;gap:9px;background:#fff;border:1.5px solid var(--steel);border-radius:2px;padding:9px 14px;font-family:var(--font-mono);font-size:12px;color:var(--muted);white-space:nowrap;box-shadow:0 2px 10px rgba(15,23,42,.05);transition:border-color .5s var(--ease),color .5s var(--ease),box-shadow .5s var(--ease);}
+    .node-chip .ico{width:15px;height:15px;}
+    .scene.is-active #nodeCloud{animation:cloudLight 0s linear 3.85s backwards;}
+    .scene.is-active #nodeCloud .node-chip{animation:chipLight 0.63s var(--ease) 3.85s both,aPop 0.56s var(--ease) backwards;animation-delay:3.85s,var(--d);}
+    @keyframes chipLight{to{border-color:var(--cyan);color:var(--blue);box-shadow:0 4px 18px rgba(56,189,248,.28);}}
+    @keyframes cloudLight{to{opacity:1;}}
+    @keyframes trackIn{from{letter-spacing:.85em;opacity:0;}to{letter-spacing:.28em;opacity:1;}}
+  </style>
+
+  <div class="anno blue a-in" style="--d:0.14s;top:52px;left:96px;">Fig. 02 — Problem space</div>
+</section>
+
+<!-- ══════════════════ SCENE 2 — INGESTION ══════════════════ -->
+<section class="scene" data-scene data-name="Ingest" data-dur="8400">
+  <div style="position:absolute;inset:0;padding:64px 96px;display:flex;flex-direction:column;">
+    <div class="a-dn" style="--d:0.14s;display:flex;align-items:center;gap:14px;">
+      <span class="tick tall"></span>
+      <div>
+        <h1 style="font-size:34px;font-weight:700;color:var(--ink);">Ingestion Pipeline</h1>
+        <p style="font-size:14px;color:var(--muted);margin-top:4px;">Clone, walk, chunk, embed — one repository becomes a searchable memory.</p>
+      </div>
+    </div>
+
+    <div class="a-up" style="--d:0.35s;margin-top:34px;display:flex;gap:14px;align-items:center;max-width:820px;">
+      <div style="flex:1;border:2px solid var(--steel);border-radius:6px;padding:14px 18px;font-family:var(--font-mono);font-size:15px;color:var(--ink);background:#fff;">
+        <span data-type="https://github.com/infinium/AI-Agent" data-type-start="630" data-type-dur="1050" class="caret"></span>
+      </div>
+      <div class="btn btn-primary" style="padding:14px 26px;font-size:15px;"><i class="ico" data-icon="sparkles" style="width:17px;height:17px;"></i>Ingest</div>
+    </div>
+
+    <div style="margin-top:40px;display:flex;gap:64px;flex:1;min-height:0;">
+      <!-- pipeline -->
+      <div style="flex:1;display:flex;flex-direction:column;justify-content:center;max-width:640px;">
+        <div class="pipe" data-pipe>
+          <div class="pipe-step a-lf" style="--d:1.82s;--lit:2.9s"><span class="ps-n">01</span><i class="ico" data-icon="git-branch"></i><b>Clone</b><span class="ps-m">GitPython</span><i class="ico ps-ck" data-icon="check"></i></div>
+          <div class="pipe-line"><span class="pl-fill" style="--d:2.24s"></span></div>
+          <div class="pipe-step a-lf" style="--d:1.925s;--lit:3.6s"><span class="ps-n">02</span><i class="ico" data-icon="folder"></i><b>Walk files</b><span class="ps-m">code · docs</span><i class="ico ps-ck" data-icon="check"></i></div>
+          <div class="pipe-line"><span class="pl-fill" style="--d:2.73s"></span></div>
+          <div class="pipe-step a-lf" style="--d:2.03s;--lit:4.3s"><span class="ps-n">03</span><i class="ico" data-icon="layers"></i><b>Chunk</b><span class="ps-m">512w · 128 overlap</span><i class="ico ps-ck" data-icon="check"></i></div>
+          <div class="pipe-line"><span class="pl-fill" style="--d:3.22s"></span></div>
+          <div class="pipe-step a-lf" style="--d:2.135s;--lit:5s"><span class="ps-n">04</span><i class="ico" data-icon="sparkles"></i><b>Embed</b><span class="ps-m">nomic-embed-text</span><i class="ico ps-ck" data-icon="check"></i></div>
+          <div class="pipe-line"><span class="pl-fill" style="--d:3.71s"></span></div>
+          <div class="pipe-step a-lf" style="--d:2.24s;--lit:5.7s"><span class="ps-n">05</span><i class="ico" data-icon="database"></i><b>ChromaDB</b><span class="ps-m">per-repo collection</span><i class="ico ps-ck" data-icon="check"></i></div>
+        </div>
+      </div>
+
+      <!-- vector field -->
+      <div style="width:520px;flex:none;display:flex;flex-direction:column;justify-content:center;gap:26px;">
+        <div class="a-in" style="--d:2.1s;">
+          <div class="bp-label" style="margin-bottom:14px;">Vector store · 18,432 chunks</div>
+          <div id="vecGrid" style="display:grid;grid-template-columns:repeat(32,1fr);gap:3px;"></div>
+        </div>
+        <div class="grid2 a-up" style="--d:4.34s;gap:14px;">
+          <div class="bp-card" style="padding:16px 18px;">
+            <div class="bp-label">Files</div>
+            <div style="font-family:var(--font-display);font-size:29px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;letter-spacing:-.03em;" data-count="1284" data-count-start="4410" data-count-dur="1260">0</div>
+          </div>
+          <div class="bp-card" style="padding:16px 18px;">
+            <div class="bp-label">Commits</div>
+            <div style="font-family:var(--font-display);font-size:29px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;letter-spacing:-.03em;" data-count="200" data-count-start="4515" data-count-dur="1260">0</div>
+          </div>
+          <div class="bp-card" style="padding:16px 18px;">
+            <div class="bp-label">Branches</div>
+            <div style="font-family:var(--font-display);font-size:29px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;letter-spacing:-.03em;" data-count="7" data-count-start="4620" data-count-dur="1260">0</div>
+          </div>
+          <div class="bp-card hot" style="padding:16px 18px;">
+            <div class="bp-label" style="color:var(--blue);">Vector chunks</div>
+            <div style="font-family:var(--font-display);font-size:29px;font-weight:700;color:var(--blue);font-variant-numeric:tabular-nums;letter-spacing:-.03em;" data-count="18432" data-count-start="4725" data-count-dur="1540">0</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="anno blue a-in" style="--d:0.14s;bottom:52px;left:96px;">Fig. 03 — FR-004 · On-demand repository scanning</div>
+
+  <style>
+    .pipe{display:flex;flex-direction:column;}
+    .pipe-step{display:flex;align-items:center;gap:14px;border:1.5px solid var(--steel);border-radius:2px;padding:15px 18px;background:#fff;position:relative;
+      animation:aLf 0.63s var(--ease) backwards,stepLit 0.35s var(--ease) both;animation-delay:var(--d),var(--lit);}
+    @keyframes stepLit{to{border-color:var(--blue);box-shadow:0 0 0 1px rgba(30,58,138,.1),0 6px 18px rgba(30,58,138,.08);}}
+    .pipe-step .ico{width:19px;height:19px;color:var(--blue);}
+    .pipe-step b{font-family:var(--font-display);font-size:16px;font-weight:600;color:var(--ink);letter-spacing:-.02em;}
+    .ps-n{font-family:var(--font-mono);font-size:11px;color:var(--muted);letter-spacing:.1em;width:22px;}
+    .ps-m{font-family:var(--font-mono);font-size:11px;color:var(--muted);margin-left:auto;letter-spacing:.04em;}
+    .ps-ck{width:19px!important;height:19px!important;color:var(--cyan)!important;opacity:0;animation:ckIn 0.315s var(--ease) both;animation-delay:calc(var(--lit) + 0.175s);}
+    @keyframes ckIn{from{opacity:0;transform:scale(.6);}to{opacity:1;transform:none;}}
+    .pipe-line{height:26px;margin-left:31px;width:2px;background:var(--line);position:relative;overflow:hidden;}
+    .pl-fill{position:absolute;inset:0;background:var(--cyan);transform:scaleY(0);transform-origin:top;animation:plFill 0.294s linear both;animation-delay:var(--d);}
+    @keyframes plFill{to{transform:scaleY(1);}}
+    .vc{aspect-ratio:1;border-radius:1px;background:var(--line);animation:vcOn 0.35s var(--ease) both;animation-delay:var(--d);}
+    @keyframes vcOn{from{background:var(--line);transform:scale(.35);}to{background:var(--c,#38BDF8);transform:none;}}
+  </style>
+</section>
+
+<!-- ══════════════════ SCENE 3 — LANDING PAGE ══════════════════ -->
+<section class="scene" data-scene data-name="Landing" data-dur="8800">
+  <div class="app" style="display:block;overflow:hidden;">
+    <!-- sticky header, exactly as shipped -->
+    <header class="a-dn" style="--d:0.14s;position:absolute;top:0;left:0;right:0;height:72px;z-index:5;border-bottom:2px solid var(--blue);background:rgba(255,255,255,.85);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:space-between;padding:0 76px;">
+      <div style="display:flex;align-items:center;gap:9px;">
+        <i class="ico" data-icon="brain" style="width:31px;height:31px;color:var(--blue);"></i>
+        <span style="font-family:var(--font-display);font-size:24px;font-weight:600;color:var(--ink);letter-spacing:-.025em;">Infinium</span>
+        <span class="bp-label" style="margin-left:8px;font-size:11px;">v1.0</span>
+      </div>
+      <div class="btn btn-outline" style="padding:7px 16px;font-size:14px;">Sign In</div>
+    </header>
+
+    <div style="position:absolute;top:72px;left:0;right:0;bottom:0;overflow:hidden;">
+      <div id="lpScroll" style="position:absolute;top:0;left:0;right:0;">
+
+        <!-- HERO -->
+        <div style="height:828px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:0 200px;gap:22px;">
+          <div class="a-pop" style="--d:0.42s;display:inline-flex;align-items:center;gap:10px;padding:9px 17px;border:2px solid var(--cyan);border-radius:2px;color:var(--blue);font-size:14px;">
+            <span class="dot pulse-dot" style="width:8px;height:8px;"></span>
+            Autonomous Reasoning Agent for Developer Knowledge Intelligence
+          </div>
+          <h1 class="a-up" style="--d:0.595s;font-size:66px;font-weight:700;color:var(--ink);line-height:1.08;max-width:19ch;">
+            Transform Your Team's <span style="color:var(--blue);">Institutional Memory</span>
+          </h1>
+          <p class="a-up" style="--d:0.77s;font-size:19px;line-height:1.68;color:var(--muted);max-width:70ch;">
+            Stop rediscovering internal knowledge. Infinium learns from your repositories, documentation, and workflows to provide contextual, reasoning-based insights directly in your development environment.
+          </p>
+          <div class="a-up" style="--d:0.945s;display:flex;gap:16px;margin-top:14px;">
+            <div class="btn btn-primary" style="padding:13px 30px;font-size:16px;">Get Started →</div>
+            <div class="btn btn-quiet" style="padding:13px 30px;font-size:16px;"><i class="ico fill" data-icon="play" style="width:14px;height:14px;"></i>View Demo</div>
+          </div>
+        </div>
+
+        <!-- CORE CAPABILITIES -->
+        <div style="height:800px;padding:60px 96px 0;">
+          <div style="text-align:center;margin-bottom:44px;">
+            <h2 class="lp-r" style="--d:2.73s;font-size:36px;font-weight:700;color:var(--ink);margin-bottom:12px;">Core Capabilities</h2>
+            <div class="lp-r" style="--d:2.835s;width:96px;height:4px;background:var(--cyan);margin:0 auto;"></div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:24px;">
+            <div class="bp-card lp-r" style="--d:2.975s;padding:26px;">
+              <div style="width:48px;height:48px;border:2px solid var(--blue);border-radius:2px;display:grid;place-items:center;color:var(--blue);margin-bottom:16px;"><i class="ico" data-icon="brain" style="width:24px;height:24px;"></i></div>
+              <h3 style="font-size:20px;font-weight:600;color:var(--ink);margin-bottom:9px;">Reasoning-Based Retrieval</h3>
+              <p style="font-size:14.5px;line-height:1.6;color:var(--muted);">Unlike traditional search, Infinium understands context and provides explanations for architectural decisions and code patterns.</p>
+              <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--line);"><span class="mono-xs">Core feature</span></div>
+            </div>
+            <div class="bp-card lp-r" style="--d:3.08s;padding:26px;">
+              <div style="width:48px;height:48px;border:2px solid var(--cyan);border-radius:2px;display:grid;place-items:center;color:var(--cyan);margin-bottom:16px;"><i class="ico" data-icon="database" style="width:24px;height:24px;"></i></div>
+              <h3 style="font-size:20px;font-weight:600;color:var(--ink);margin-bottom:9px;">Multi-Source Learning</h3>
+              <p style="font-size:14.5px;line-height:1.6;color:var(--muted);">Continuously learns from GitHub repos, documentation, error tracking, and team communications.</p>
+              <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--line);"><span class="mono-xs">Data pipeline</span></div>
+            </div>
+            <div class="bp-card lp-r" style="--d:3.185s;padding:26px;">
+              <div style="width:48px;height:48px;border:2px solid var(--amber);border-radius:2px;display:grid;place-items:center;color:var(--amber);margin-bottom:16px;"><i class="ico" data-icon="users" style="width:24px;height:24px;"></i></div>
+              <h3 style="font-size:20px;font-weight:600;color:var(--ink);margin-bottom:9px;">Team Collaboration</h3>
+              <p style="font-size:14.5px;line-height:1.6;color:var(--muted);">Share insights, document decisions, and build a shared understanding across your entire engineering team.</p>
+              <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--line);"><span class="mono-xs">Collaboration</span></div>
+            </div>
+            <div class="bp-card lp-r" style="--d:3.29s;padding:26px;">
+              <div style="width:48px;height:48px;border:2px solid var(--blue);border-radius:2px;display:grid;place-items:center;color:var(--blue);margin-bottom:16px;"><i class="ico" data-icon="git-branch" style="width:24px;height:24px;"></i></div>
+              <h3 style="font-size:20px;font-weight:600;color:var(--ink);margin-bottom:9px;">Version Control Insights</h3>
+              <p style="font-size:14.5px;line-height:1.6;color:var(--muted);">Traces commit histories and PR discussions to explain why specific decisions were made.</p>
+              <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--line);"><span class="mono-xs">Git integration</span></div>
+            </div>
+            <div class="bp-card lp-r" style="--d:3.395s;padding:26px;">
+              <div style="width:48px;height:48px;border:2px solid var(--cyan);border-radius:2px;display:grid;place-items:center;color:var(--cyan);margin-bottom:16px;"><i class="ico" data-icon="line-chart" style="width:24px;height:24px;"></i></div>
+              <h3 style="font-size:20px;font-weight:600;color:var(--ink);margin-bottom:9px;">Analytics Dashboard</h3>
+              <p style="font-size:14.5px;line-height:1.6;color:var(--muted);">Visualize knowledge trends, repeated queries, and productivity improvements across your team.</p>
+              <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--line);"><span class="mono-xs">Metrics</span></div>
+            </div>
+            <div class="bp-card lp-r" style="--d:3.5s;padding:26px;">
+              <div style="width:48px;height:48px;border:2px solid var(--amber);border-radius:2px;display:grid;place-items:center;color:var(--amber);margin-bottom:16px;"><i class="ico" data-icon="shield" style="width:24px;height:24px;"></i></div>
+              <h3 style="font-size:20px;font-weight:600;color:var(--ink);margin-bottom:9px;">Enterprise Security</h3>
+              <p style="font-size:14.5px;line-height:1.6;color:var(--muted);">SOC2 compliant with role-based access control, audit logs, and data encryption at rest and in transit.</p>
+              <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--line);"><span class="mono-xs">Security</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- EXPECTED IMPACT -->
+        <div style="height:560px;padding:40px 96px 0;">
+          <div class="brackets lp-r" style="--d:5.74s;border:2px solid var(--blue);border-radius:2px;padding:56px;background:linear-gradient(135deg,var(--soft),#fff);">
+            <h2 style="font-size:34px;font-weight:700;color:var(--ink);text-align:center;margin-bottom:48px;">Expected Impact</h2>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:48px;text-align:center;">
+              <div>
+                <div style="font-family:var(--font-display);font-size:60px;font-weight:700;color:var(--blue);letter-spacing:-.04em;font-variant-numeric:tabular-nums;"><span data-count="40" data-count-start="6090" data-count-dur="1050" data-count-prefix="30-" data-count-suffix="%">30-0%</span></div>
+                <div style="width:64px;height:4px;background:var(--cyan);margin:12px auto;"></div>
+                <p style="font-size:15px;color:var(--muted);">Reduction in knowledge search time</p>
+              </div>
+              <div>
+                <div style="font-family:var(--font-display);font-size:60px;font-weight:700;color:var(--cyan);letter-spacing:-.04em;font-variant-numeric:tabular-nums;"><span data-count="85" data-count-start="6195" data-count-dur="1050" data-count-prefix="≥" data-count-suffix="%">≥0%</span></div>
+                <div style="width:64px;height:4px;background:var(--amber);margin:12px auto;"></div>
+                <p style="font-size:15px;color:var(--muted);">Contextual accuracy rate</p>
+              </div>
+              <div>
+                <div style="font-family:var(--font-display);font-size:60px;font-weight:700;color:var(--amber);letter-spacing:-.04em;">24/7</div>
+                <div style="width:64px;height:4px;background:var(--blue);margin:12px auto;"></div>
+                <p style="font-size:15px;color:var(--muted);">Continuous learning &amp; availability</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <div class="anno blue a-in" style="--d:0.14s;bottom:26px;left:76px;z-index:6;">Fig. 04 — Marketing surface</div>
+
+  <style>
+    .scene.is-active #lpScroll{animation:lpCam 8.75s var(--ease-io) both;}
+    @keyframes lpCam{
+      0%{transform:translateY(0);}
+      26%{transform:translateY(0);animation-timing-function:cubic-bezier(.65,0,.35,1);}
+      35%{transform:translateY(-828px);}
+      62%{transform:translateY(-828px);animation-timing-function:cubic-bezier(.65,0,.35,1);}
+      70%{transform:translateY(-1422px);}
+      100%{transform:translateY(-1422px);}
+    }
+    .lp-r{animation:aUp 0.665s var(--ease) backwards;animation-delay:var(--d,0s);}
+  </style>
+</section>
+
+<!-- ══════════════════ SCENE 4 — DASHBOARD ══════════════════ -->
+<section class="scene" data-scene data-name="Dashboard" data-dur="8000">
+  <div class="app">
+    <aside class="side a-lf" style="--d:0.105s;">
+      <div class="side-logo">
+        <i class="ico" data-icon="brain"></i>
+        <div><h4>Infinium</h4><p class="bp-label" style="font-size:10px;margin-top:2px;">Knowledge AI</p></div>
+      </div>
+      <nav class="side-nav">
+        <div class="nav-i on nv" style="--d:0.35s"><i class="ico" data-icon="layout"></i>Dashboard</div>
+        <div class="nav-i nv" style="--d:0.399s"><i class="ico" data-icon="folder"></i>Repositories</div>
+        <div class="nav-i nv" style="--d:0.448s"><i class="ico" data-icon="database"></i>Data Sources Indexing</div>
+        <div class="nav-i nv" style="--d:0.497s"><i class="ico" data-icon="message"></i>Query Interface</div>
+        <div class="nav-i nv" style="--d:0.546s"><i class="ico" data-icon="wand"></i>Code Refactor</div>
+        <div class="nav-i nv" style="--d:0.595s"><i class="ico" data-icon="book"></i>Document Agent</div>
+        <div class="nav-i nv" style="--d:0.644s"><i class="ico" data-icon="line-chart"></i>Analytics</div>
+        <div class="nav-i nv" style="--d:0.693s"><i class="ico" data-icon="file-text"></i>PDF Viewer</div>
+        <div class="nav-i nv" style="--d:0.742s"><i class="ico" data-icon="brain"></i>Architecture</div>
+        <div class="nav-i nv" style="--d:0.791s"><i class="ico" data-icon="alert"></i>Feedback</div>
+      </nav>
+      <div style="padding:0 14px 14px;">
+        <div style="border-top:1px solid var(--line);padding-top:14px;display:flex;align-items:center;gap:9px;">
+          <span style="width:9px;height:9px;border:1.5px solid var(--cyan);border-radius:99px;" class="pulse-dot"></span>
+          <span class="bp-label" style="font-size:10px;">System Active</span>
+        </div>
+      </div>
+      <div class="side-foot">
+        <div class="usr">
+          <div class="avatar">FA</div>
+          <div style="min-width:0;">
+            <p style="font-size:13px;font-weight:500;color:var(--ink);">Fiza Amjad</p>
+            <p style="font-size:11.5px;color:var(--muted);margin-top:1px;">fiza@infinium.dev</p>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="app-head a-dn" style="--d:0.21s;">
+        <div class="hd-l">
+          <span class="tick tall"></span>
+          <div><h1>Dashboard</h1><p class="sub">Monitor your knowledge intelligence system</p></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:11px;padding:6px 10px;border:2px solid transparent;border-radius:10px;">
+          <div class="avatar grad" style="width:40px;height:40px;font-size:15px;">FA</div>
+          <div><p style="font-size:13.5px;font-weight:600;color:var(--ink);">Fiza Amjad</p><p style="font-size:11.5px;color:var(--muted);">GitHub User</p></div>
+        </div>
+      </header>
+
+      <div class="app-body">
+        <div class="grid4">
+          <div class="bp-card stat a-up" style="--d:0.56s;"><div><p class="bp-label">Indexed Repos</p><p class="v" data-count="12" data-count-start="700" data-count-dur="980">0</p></div><div class="sq"><i class="ico" data-icon="git-commit"></i></div></div>
+          <div class="bp-card stat a-up" style="--d:0.63s;"><div><p class="bp-label">Total Queries</p><p class="v" data-count="1847" data-count-start="770" data-count-dur="1120">0</p></div><div class="sq am"><i class="ico" data-icon="message"></i></div></div>
+          <div class="bp-card stat a-up" style="--d:0.7s;"><div><p class="bp-label">Avg Accuracy</p><p class="v" data-count="91" data-count-start="840" data-count-dur="1050" data-count-suffix="%">0%</p></div><div class="sq cy"><i class="ico" data-icon="activity"></i></div></div>
+          <div class="bp-card stat a-up" style="--d:0.77s;"><div><p class="bp-label">Vector Chunks</p><p class="v" data-count="18432" data-count-start="910" data-count-dur="1330">0</p></div><div class="sq"><i class="ico" data-icon="database"></i></div></div>
+        </div>
+
+        <div class="grid2" style="flex:1;min-height:0;">
+          <div class="bp-card a-up" style="--d:1.05s;padding:20px;display:flex;flex-direction:column;">
+            <div class="h2row" style="justify-content:space-between;">
+              <div style="display:flex;align-items:center;gap:10px;"><span class="tick" style="height:22px;background:var(--blue);"></span><h2>Recent Queries</h2></div>
+              <span style="font-size:13px;color:var(--blue);display:flex;align-items:center;gap:6px;">View All <i class="ico" data-icon="arrow-right" style="width:14px;height:14px;"></i></span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <div class="item dq" style="--d:1.4s;"><p style="font-size:13.5px;font-weight:500;color:var(--ink);">Why was the auth flow moved from JWT-only to GitHub OAuth?</p><p style="font-size:11.5px;color:var(--muted);margin-top:4px;">Repo: infinium_ai-agent</p><div style="display:flex;gap:14px;margin-top:8px;font-size:11.5px;"><span style="color:var(--muted);display:flex;align-items:center;gap:5px;"><i class="ico" data-icon="clock" style="width:12px;height:12px;"></i>26 Aug, 14:12</span><span style="color:var(--cyan);display:flex;align-items:center;gap:5px;"><i class="ico" data-icon="check" style="width:12px;height:12px;"></i>Answered</span></div></div>
+              <div class="item dq" style="--d:1.505s;"><p style="font-size:13.5px;font-weight:500;color:var(--ink);">Which modules depend on the reranker, and why is BM25 in the path?</p><p style="font-size:11.5px;color:var(--muted);margin-top:4px;">Repo: infinium_ai-agent</p><div style="display:flex;gap:14px;margin-top:8px;font-size:11.5px;"><span style="color:var(--muted);display:flex;align-items:center;gap:5px;"><i class="ico" data-icon="clock" style="width:12px;height:12px;"></i>26 Aug, 13:48</span><span style="color:var(--cyan);display:flex;align-items:center;gap:5px;"><i class="ico" data-icon="check" style="width:12px;height:12px;"></i>Answered</span></div></div>
+              <div class="item dq" style="--d:1.61s;"><p style="font-size:13.5px;font-weight:500;color:var(--ink);">Summarize what changed on feat/branch-index since it forked.</p><p style="font-size:11.5px;color:var(--muted);margin-top:4px;">Repo: infinium_fe</p><div style="display:flex;gap:14px;margin-top:8px;font-size:11.5px;"><span style="color:var(--muted);display:flex;align-items:center;gap:5px;"><i class="ico" data-icon="clock" style="width:12px;height:12px;"></i>26 Aug, 11:05</span><span style="color:var(--cyan);display:flex;align-items:center;gap:5px;"><i class="ico" data-icon="check" style="width:12px;height:12px;"></i>Answered</span></div></div>
+              <div class="item dq" style="--d:1.715s;"><p style="font-size:13.5px;font-weight:500;color:var(--ink);">Who last touched the chunker and what did they change?</p><p style="font-size:11.5px;color:var(--muted);margin-top:4px;">Repo: infinium_ai-agent</p><div style="display:flex;gap:14px;margin-top:8px;font-size:11.5px;"><span style="color:var(--muted);display:flex;align-items:center;gap:5px;"><i class="ico" data-icon="clock" style="width:12px;height:12px;"></i>25 Aug, 19:31</span><span style="color:var(--cyan);display:flex;align-items:center;gap:5px;"><i class="ico" data-icon="check" style="width:12px;height:12px;"></i>Answered</span></div></div>
+            </div>
+          </div>
+
+          <div class="bp-card a-up" style="--d:1.12s;padding:20px;display:flex;flex-direction:column;">
+            <div class="h2row" style="justify-content:space-between;">
+              <div style="display:flex;align-items:center;gap:10px;"><span class="tick" style="height:22px;background:var(--blue);"></span><h2>Active Repositories</h2></div>
+              <span style="font-size:13px;color:var(--blue);display:flex;align-items:center;gap:6px;">Manage <i class="ico" data-icon="arrow-right" style="width:14px;height:14px;"></i></span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <div class="item dq" style="--d:1.435s;"><div style="display:flex;align-items:center;justify-content:space-between;"><div style="display:flex;align-items:center;gap:11px;"><div style="width:32px;height:32px;border-radius:2px;background:var(--tint);color:var(--blue);display:grid;place-items:center;"><i class="ico" data-icon="database" style="width:16px;height:16px;"></i></div><div><p style="font-size:13.5px;font-weight:700;color:var(--ink);">infinium_ai-agent</p><span class="mono-xs">Multi-Branch Index</span></div></div><div style="text-align:right;"><p style="font-size:13.5px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;">9,204</p><p class="mono-xs">Chunks</p></div></div><div style="display:flex;align-items:center;justify-content:space-between;margin-top:11px;padding-top:11px;border-top:1px solid var(--line);"><div style="display:flex;gap:9px;align-items:center;"><span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:2px;background:var(--soft);border:1px solid var(--line);color:var(--muted);">Python</span><span style="font-size:10px;font-weight:700;color:var(--blue);display:flex;align-items:center;gap:4px;"><i class="ico" data-icon="message" style="width:11px;height:11px;"></i>Chat</span></div><span class="mono-xs">Indexed 26/08/2026</span></div></div>
+              <div class="item dq" style="--d:1.54s;"><div style="display:flex;align-items:center;justify-content:space-between;"><div style="display:flex;align-items:center;gap:11px;"><div style="width:32px;height:32px;border-radius:2px;background:var(--tint);color:var(--blue);display:grid;place-items:center;"><i class="ico" data-icon="database" style="width:16px;height:16px;"></i></div><div><p style="font-size:13.5px;font-weight:700;color:var(--ink);">infinium_fe</p><span class="mono-xs">Standard Index</span></div></div><div style="text-align:right;"><p style="font-size:13.5px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;">5,118</p><p class="mono-xs">Chunks</p></div></div><div style="display:flex;align-items:center;justify-content:space-between;margin-top:11px;padding-top:11px;border-top:1px solid var(--line);"><div style="display:flex;gap:9px;align-items:center;"><span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:2px;background:var(--soft);border:1px solid var(--line);color:var(--muted);">TypeScript</span><span style="font-size:10px;font-weight:700;color:var(--blue);display:flex;align-items:center;gap:4px;"><i class="ico" data-icon="message" style="width:11px;height:11px;"></i>Chat</span></div><span class="mono-xs">Indexed 26/08/2026</span></div></div>
+              <div class="item dq" style="--d:1.645s;"><div style="display:flex;align-items:center;justify-content:space-between;"><div style="display:flex;align-items:center;gap:11px;"><div style="width:32px;height:32px;border-radius:2px;background:var(--tint);color:var(--blue);display:grid;place-items:center;"><i class="ico" data-icon="database" style="width:16px;height:16px;"></i></div><div><p style="font-size:13.5px;font-weight:700;color:var(--ink);">infinium_be</p><span class="mono-xs">Standard Index</span></div></div><div style="text-align:right;"><p style="font-size:13.5px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;">3,061</p><p class="mono-xs">Chunks</p></div></div><div style="display:flex;align-items:center;justify-content:space-between;margin-top:11px;padding-top:11px;border-top:1px solid var(--line);"><div style="display:flex;gap:9px;align-items:center;"><span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:2px;background:var(--soft);border:1px solid var(--line);color:var(--muted);">JavaScript</span><span style="font-size:10px;font-weight:700;color:var(--blue);display:flex;align-items:center;gap:4px;"><i class="ico" data-icon="message" style="width:11px;height:11px;"></i>Chat</span></div><span class="mono-xs">Indexed 25/08/2026</span></div></div>
+              <div class="item dq" style="--d:1.75s;"><div style="display:flex;align-items:center;justify-content:space-between;"><div style="display:flex;align-items:center;gap:11px;"><div style="width:32px;height:32px;border-radius:2px;background:var(--tint);color:var(--blue);display:grid;place-items:center;"><i class="ico" data-icon="database" style="width:16px;height:16px;"></i></div><div><p style="font-size:13.5px;font-weight:700;color:var(--ink);">ai-cardiocare</p><span class="mono-xs">Standard Index</span></div></div><div style="text-align:right;"><p style="font-size:13.5px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;">1,049</p><p class="mono-xs">Chunks</p></div></div><div style="display:flex;align-items:center;justify-content:space-between;margin-top:11px;padding-top:11px;border-top:1px solid var(--line);"><div style="display:flex;gap:9px;align-items:center;"><span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:2px;background:var(--soft);border:1px solid var(--line);color:var(--muted);">Python</span><span style="font-size:10px;font-weight:700;color:var(--blue);display:flex;align-items:center;gap:4px;"><i class="ico" data-icon="message" style="width:11px;height:11px;"></i>Chat</span></div><span class="mono-xs">Indexed 24/08/2026</span></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="bp-card a-up" style="--d:1.19s;padding:18px 20px;">
+          <div class="h2row"><span class="tick" style="height:22px;background:var(--blue);"></span><h2>Quick Actions</h2></div>
+          <div class="grid3">
+            <div class="btn btn-primary qa" style="--d:1.96s;flex-direction:column;gap:7px;padding:14px;font-size:15px;"><i class="ico" data-icon="message" style="width:23px;height:23px;"></i>New Query</div>
+            <div class="btn btn-outline qa" style="--d:2.03s;flex-direction:column;gap:7px;padding:14px;font-size:15px;"><i class="ico" data-icon="git-commit" style="width:23px;height:23px;"></i>Sync Data</div>
+            <div class="btn btn-outline qa" style="--d:2.1s;flex-direction:column;gap:7px;padding:14px;font-size:15px;"><i class="ico" data-icon="activity" style="width:23px;height:23px;"></i>View Analytics</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- authored pointer: hovers a repo card, then a quick action -->
+  <div class="ptr" id="dashPtr"><svg viewBox="0 0 24 24"><path d="M4 3l7.5 17 2.2-7.3L21 10.5z" fill="#0F172A" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg></div>
+
+  <style>
+    .nv{animation:aLf 0.49s var(--ease) backwards;animation-delay:var(--d);}
+    .dq{animation:aUp 0.56s var(--ease) backwards;animation-delay:var(--d);}
+    .qa{animation:aPop 0.49s var(--ease) backwards;animation-delay:var(--d);}
+    .ptr{position:absolute;width:26px;height:26px;left:0;top:0;opacity:0;filter:drop-shadow(0 3px 6px rgba(15,23,42,.3));z-index:20;}
+    .ptr svg{width:100%;height:100%;}
+    .scene.is-active #dashPtr{animation:ptrPath 4.2s var(--ease) 2.94s both;}
+    @keyframes ptrPath{
+      0%{opacity:0;transform:translate(1180px,760px);}
+      8%{opacity:1;}
+      22%{transform:translate(1150px,470px);}
+      46%{transform:translate(1150px,470px);}
+      64%{transform:translate(560px,795px);}
+      92%{opacity:1;transform:translate(560px,795px);}
+      100%{opacity:0;transform:translate(560px,795px);}
+    }
+    .scene.is-active .dq:nth-child(2){animation:aUp 0.56s var(--ease) backwards,hoverHot 0.35s var(--ease) 3.64s both;animation-delay:var(--d),3.64s;}
+    @keyframes hoverHot{to{border-color:var(--cyan);}}
+    .scene.is-active .qa:nth-child(1){animation:aPop 0.49s var(--ease) backwards,qaHot 0.315s var(--ease) 5.18s both;animation-delay:var(--d),5.18s;}
+    @keyframes qaHot{to{background:var(--cyan);border-color:var(--cyan);}}
+  </style>
+</section>
+
+<!-- ══════════════════ SCENE 5 — QUERY / RAG ══════════════════ -->
+<section class="scene" data-scene data-name="RAG Query" data-dur="11600">
+  <div class="app">
+    <aside class="side a-lf" style="--d:0.07s;width:250px;">
+      <div class="side-logo"><i class="ico" data-icon="brain"></i><div><h4>Infinium</h4><p class="bp-label" style="font-size:10px;margin-top:2px;">Knowledge AI</p></div></div>
+      <nav class="side-nav">
+        <div class="nav-i"><i class="ico" data-icon="layout"></i>Dashboard</div>
+        <div class="nav-i"><i class="ico" data-icon="folder"></i>Repositories</div>
+        <div class="nav-i"><i class="ico" data-icon="database"></i>Data Sources Indexing</div>
+        <div class="nav-i on"><i class="ico" data-icon="message"></i>Query Interface</div>
+        <div class="nav-i"><i class="ico" data-icon="wand"></i>Code Refactor</div>
+        <div class="nav-i"><i class="ico" data-icon="book"></i>Document Agent</div>
+        <div class="nav-i"><i class="ico" data-icon="line-chart"></i>Analytics</div>
+        <div class="nav-i"><i class="ico" data-icon="file-text"></i>PDF Viewer</div>
+        <div class="nav-i"><i class="ico" data-icon="brain"></i>Architecture</div>
+        <div class="nav-i"><i class="ico" data-icon="alert"></i>Feedback</div>
+      </nav>
+      <div class="side-foot"><div class="usr"><div class="avatar">FA</div><div><p style="font-size:13px;font-weight:500;color:var(--ink);">Fiza Amjad</p><p style="font-size:11.5px;color:var(--muted);margin-top:1px;">fiza@infinium.dev</p></div></div></div>
+    </aside>
+
+    <!-- conversation rail -->
+    <div class="a-lf" style="--d:0.175s;width:266px;flex:none;border-right:2px solid var(--line);background:#fff;display:flex;flex-direction:column;">
+      <div style="padding:17px;border-bottom:2px solid var(--line);display:flex;flex-direction:column;gap:13px;">
+        <div>
+          <label class="bp-label" style="font-size:10px;display:block;margin-bottom:7px;">Repository</label>
+          <div style="border:2px solid var(--steel);border-radius:6px;padding:10px 12px;font-size:13px;color:var(--ink);display:flex;align-items:center;justify-content:space-between;">infinium_ai-agent<i class="ico" data-icon="chevron" style="width:14px;height:14px;color:var(--muted);"></i></div>
+        </div>
+        <div>
+          <label class="bp-label" style="font-size:10px;display:block;margin-bottom:7px;">Branch</label>
+          <div style="border:2px solid var(--steel);border-radius:6px;padding:10px 12px;font-size:13px;color:var(--ink);display:flex;align-items:center;justify-content:space-between;">all branches<i class="ico" data-icon="chevron" style="width:14px;height:14px;color:var(--muted);"></i></div>
+        </div>
+        <div class="btn btn-primary" style="width:100%;padding:10px;font-size:13.5px;"><i class="ico" data-icon="plus" style="width:15px;height:15px;"></i>New conversation</div>
+      </div>
+      <div style="padding:13px;display:flex;flex-direction:column;gap:9px;">
+        <div style="border:2px solid var(--blue);background:var(--tint);border-radius:2px;padding:11px 13px;"><p style="font-size:12.5px;color:var(--ink);">Auth strategy change</p><p style="font-size:11px;color:var(--muted);margin-top:3px;">2 messages · just now</p></div>
+        <div style="border:2px solid var(--line);border-radius:2px;padding:11px 13px;"><p style="font-size:12.5px;color:var(--ink);">Reranker dependencies</p><p style="font-size:11px;color:var(--muted);margin-top:3px;">6 messages · 24m ago</p></div>
+        <div style="border:2px solid var(--line);border-radius:2px;padding:11px 13px;"><p style="font-size:12.5px;color:var(--ink);">Chunking strategy</p><p style="font-size:11px;color:var(--muted);margin-top:3px;">4 messages · yesterday</p></div>
+      </div>
+    </div>
+
+    <!-- chat -->
+    <div class="main">
+      <header class="app-head a-dn" style="--d:0.28s;padding:18px 30px;">
+        <div class="hd-l">
+          <span class="tick tall"></span>
+          <div><h1 style="font-size:28px;">Query Interface</h1><p class="sub">Asking about "infinium_ai-agent"</p></div>
+        </div>
+        <div class="badge"><span class="dot pulse-dot"></span>RAG Engine</div>
+      </header>
+
+      <div style="flex:1;padding:22px 34px;display:flex;flex-direction:column;gap:16px;min-height:0;overflow:hidden;">
+
+        <!-- user message -->
+        <div class="a-up" style="--d:0.84s;display:flex;justify-content:flex-end;">
+          <div style="max-width:660px;">
+            <div style="background:var(--blue);border:2px solid var(--blue);border-radius:2px;padding:15px 19px;color:#fff;font-size:15px;line-height:1.55;">
+              <span data-type="Why was the auth flow moved from JWT-only to GitHub OAuth?" data-type-start="1050" data-type-dur="1330" class="caret" style="--caret:#fff"></span>
+            </div>
+            <div style="display:flex;justify-content:flex-end;align-items:center;gap:7px;margin-top:7px;">
+              <span style="font-size:11.5px;color:var(--steel);">14:12</span>
+              <i class="ico" data-icon="check" style="width:15px;height:15px;color:var(--cyan);"></i>
+            </div>
+          </div>
+        </div>
+
+        <!-- assistant -->
+        <div class="a-up" style="--d:2.59s;display:flex;flex-direction:column;gap:9px;flex:1;min-height:0;">
+          <div style="display:flex;align-items:center;gap:9px;">
+            <div style="width:32px;height:32px;background:var(--blue);border:2px solid var(--cyan);border-radius:2px;display:grid;place-items:center;color:#fff;"><i class="ico" data-icon="sparkles" style="width:16px;height:16px;"></i></div>
+            <span style="font-family:var(--font-display);font-size:14px;font-weight:600;color:var(--ink);">Infinium</span>
+            <span style="font-size:12.5px;color:var(--muted);">reasoning over 18,432 indexed chunks</span>
+          </div>
+
+          <!-- reasoning trace panel -->
+          <div id="ragPanel" style="border:2px dashed var(--cyan);background:var(--soft);border-radius:2px;padding:18px 20px;display:flex;gap:26px;">
+            <!-- retrieve -->
+            <div style="width:330px;flex:none;">
+              <div class="rag-h" style="--d:2.87s"><span class="rag-n">01</span>Retrieve<span class="rag-t">hybrid · 0.42s</span></div>
+              <div style="display:flex;flex-direction:column;gap:7px;margin-top:11px;">
+                <div class="chunk" style="--d:3.08s"><i class="ico" data-icon="code"></i><span>auth/github_oauth.py</span><b>0.91</b><span class="cbar" style="--w:91%;--d:3.15s"></span></div>
+                <div class="chunk" style="--d:3.185s"><i class="ico" data-icon="git-commit"></i><span>commit a3f19c2</span><b>0.87</b><span class="cbar" style="--w:87%;--d:3.255s"></span></div>
+                <div class="chunk" style="--d:3.29s"><i class="ico" data-icon="git-branch"></i><span>PR #412</span><b>0.83</b><span class="cbar" style="--w:83%;--d:3.36s"></span></div>
+                <div class="chunk" style="--d:3.395s"><i class="ico" data-icon="code"></i><span>auth/jwt_handler.py</span><b>0.78</b><span class="cbar" style="--w:78%;--d:3.465s"></span></div>
+                <div class="chunk" style="--d:3.5s"><i class="ico" data-icon="file-text"></i><span>docs/AUTH.md</span><b>0.72</b><span class="cbar" style="--w:72%;--d:3.57s"></span></div>
+              </div>
+            </div>
+            <!-- reason -->
+            <div style="flex:1;min-width:0;border-left:1px solid var(--line);padding-left:26px;">
+              <div class="rag-h" style="--d:3.92s"><span class="rag-n">02</span>Reason<span class="rag-t">kimi-k2.5 · 2.14s</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;margin-top:11px;">
+                <div class="trace" style="--d:4.13s">Query targets a change in authentication strategy → causal + temporal.</div>
+                <div class="trace" style="--d:4.305s">Anchor: <b>a3f19c2</b> touches <b>auth/github_oauth.py</b>, adds token exchange.</div>
+                <div class="trace" style="--d:4.48s">Prior state: <b>jwt_handler.py</b> issues HS256 tokens with no repository scope.</div>
+                <div class="trace" style="--d:4.655s">Constraint in <b>PR #412</b>: private-repo ingestion needs the user's GitHub token.</div>
+                <div class="trace" style="--d:4.83s">Conclusion: OAuth layered <b>ahead of</b> JWT, not a replacement.</div>
+              </div>
+              <div class="rag-h" style="--d:5.25s;margin-top:16px;"><span class="rag-n">03</span>Synthesize<span class="rag-t">minimax-m2.7 · 1.62s</span></div>
+            </div>
+          </div>
+
+          <!-- answer -->
+          <div id="answerCard" style="border:2px solid var(--line);border-radius:2px;padding:19px 22px;background:#fff;flex:1;min-height:0;">
+            <div data-stream data-stream-start="6020" data-stream-dur="3220" style="font-size:14.5px;line-height:1.72;color:var(--ink);">
+              The change came from <b>PR #412</b>, merged three weeks after the JWT-only flow shipped. The commit message on <code>a3f19c2</code> is explicit: repository access had to be validated against GitHub itself, and a self-issued JWT could not prove the user had read access to a private repo. So OAuth was added <b>in front of</b> JWT rather than replacing it — <code>github_oauth.py</code> exchanges the code for a GitHub token, and <code>jwt_handler.py</code> still issues the session token afterwards. The stored GitHub token is what <code>ingest_repository()</code> later uses for private clones.
+            </div>
+
+            <div class="a-up" style="--d:9.38s;margin-top:16px;padding-top:15px;border-top:2px solid var(--line);">
+              <p style="font-size:12.5px;color:var(--muted);margin-bottom:10px;">Sources</p>
+              <div style="display:flex;gap:9px;">
+                <div class="src"><i class="ico" data-icon="code"></i>auth/github_oauth.py<span>0.91</span></div>
+                <div class="src"><i class="ico" data-icon="git-commit"></i>commit a3f19c2<span>0.87</span></div>
+                <div class="src"><i class="ico" data-icon="git-branch"></i>PR #412<span>0.83</span></div>
+              </div>
+            </div>
+
+            <div class="a-up" style="--d:9.73s;display:flex;align-items:center;gap:11px;margin-top:15px;padding-top:14px;border-top:2px solid var(--line);">
+              <span class="mono-xs" style="border:1px solid var(--line);padding:3px 8px;border-radius:2px;">minimax-m2.7 · dual-model</span>
+              <span class="mono-xs" style="border:1px solid var(--line);padding:3px 8px;border-radius:2px;">1,284 tokens</span>
+              <span class="mono-xs" style="border:1px solid var(--line);padding:3px 8px;border-radius:2px;">4.18s</span>
+              <div style="margin-left:auto;display:flex;gap:7px;color:var(--muted);">
+                <i class="ico" data-icon="thumb-up" style="width:17px;height:17px;color:var(--cyan);"></i>
+                <i class="ico" data-icon="thumb-down" style="width:17px;height:17px;"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="a-up" style="--d:0.63s;border-top:2px solid var(--blue);padding:16px 34px;display:flex;gap:13px;align-items:center;flex:none;">
+        <div style="flex:1;border:2px solid var(--steel);border-radius:6px;padding:13px 16px;font-size:14px;color:#94A3B8;">Ask about architecture, code patterns, errors, or anything else…</div>
+        <div class="btn btn-primary" style="padding:13px 24px;"><i class="ico" data-icon="send" style="width:16px;height:16px;"></i>Send</div>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .rag-h{display:flex;align-items:center;gap:9px;font-family:var(--font-display);font-size:13.5px;font-weight:600;color:var(--blue);text-transform:uppercase;letter-spacing:.06em;animation:aUp 0.49s var(--ease) backwards;animation-delay:var(--d);}
+    .rag-n{font-family:var(--font-mono);font-size:10.5px;color:var(--muted);letter-spacing:.1em;}
+    .rag-t{margin-left:auto;font-family:var(--font-mono);font-size:10.5px;color:var(--muted);text-transform:none;letter-spacing:.04em;}
+    .chunk{display:flex;align-items:center;gap:9px;position:relative;background:#fff;border:1px solid var(--line);border-radius:2px;padding:7px 10px;font-size:11.5px;color:var(--ink);overflow:hidden;animation:aRt 0.42s var(--ease) backwards;animation-delay:var(--d);}
+    .chunk .ico{width:13px;height:13px;color:var(--blue);flex:none;}
+    .chunk span:not(.cbar){flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--font-mono);letter-spacing:-.01em;}
+    .chunk b{font-family:var(--font-mono);font-size:11px;color:var(--cyan);font-variant-numeric:tabular-nums;}
+    .cbar{position:absolute;left:0;bottom:0;height:2px;background:var(--cyan);width:var(--w);transform:scaleX(0);transform-origin:left;animation:cbarIn 0.49s var(--ease) both;animation-delay:var(--d);}
+    @keyframes cbarIn{to{transform:scaleX(1);}}
+    .trace{font-family:var(--font-mono);font-size:11.5px;line-height:1.6;color:var(--muted);padding-left:15px;position:relative;animation:aUp 0.42s var(--ease) backwards;animation-delay:var(--d);}
+    .trace::before{content:"";position:absolute;left:0;top:8px;width:6px;height:6px;border:1px solid var(--cyan);border-radius:99px;}
+    .trace b{color:var(--blue);font-weight:500;}
+    .src{display:flex;align-items:center;gap:8px;border:2px solid var(--line);border-radius:2px;padding:8px 12px;font-family:var(--font-mono);font-size:11.5px;color:var(--ink);}
+    .src .ico{width:14px;height:14px;color:var(--blue);}
+    .src span{color:var(--cyan);font-variant-numeric:tabular-nums;}
+    #answerCard code{font-family:var(--font-mono);font-size:.88em;background:var(--soft);border:1px solid var(--line);border-radius:2px;padding:1px 5px;color:var(--blue);}
+    #answerCard b{font-weight:600;color:var(--blue);}
+    .scene.is-active #ragPanel{animation:aUp 0.56s var(--ease) backwards,ragFade 0.56s var(--ease) 6.02s both;animation-delay:2.73s,6.02s;}
+    @keyframes ragFade{to{opacity:.4;filter:saturate(.4);}}
+    .scene.is-active #answerCard{animation:aUp 0.56s var(--ease) backwards;animation-delay:5.88s;}
+  </style>
+</section>
+
+<!-- ══════════════════ SCENE 6 — ARCHITECTURE ══════════════════ -->
+<section class="scene" data-scene data-name="Architecture" data-dur="7300">
+  <div class="app">
+    <aside class="side a-lf" style="--d:0.07s;width:250px;">
+      <div class="side-logo"><i class="ico" data-icon="brain"></i><div><h4>Infinium</h4><p class="bp-label" style="font-size:10px;margin-top:2px;">Knowledge AI</p></div></div>
+      <nav class="side-nav">
+        <div class="nav-i"><i class="ico" data-icon="layout"></i>Dashboard</div>
+        <div class="nav-i"><i class="ico" data-icon="folder"></i>Repositories</div>
+        <div class="nav-i"><i class="ico" data-icon="database"></i>Data Sources Indexing</div>
+        <div class="nav-i"><i class="ico" data-icon="message"></i>Query Interface</div>
+        <div class="nav-i"><i class="ico" data-icon="wand"></i>Code Refactor</div>
+        <div class="nav-i"><i class="ico" data-icon="book"></i>Document Agent</div>
+        <div class="nav-i"><i class="ico" data-icon="line-chart"></i>Analytics</div>
+        <div class="nav-i"><i class="ico" data-icon="file-text"></i>PDF Viewer</div>
+        <div class="nav-i on"><i class="ico" data-icon="brain"></i>Architecture</div>
+        <div class="nav-i"><i class="ico" data-icon="alert"></i>Feedback</div>
+      </nav>
+      <div class="side-foot"><div class="usr"><div class="avatar">FA</div><div><p style="font-size:13px;font-weight:500;color:var(--ink);">Fiza Amjad</p><p style="font-size:11.5px;color:var(--muted);margin-top:1px;">fiza@infinium.dev</p></div></div></div>
+    </aside>
+
+    <div class="main">
+      <header class="app-head a-dn" style="--d:0.21s;padding:18px 30px;">
+        <div class="hd-l"><span class="tick tall"></span><div><h1 style="font-size:28px;">Architecture Visualizer</h1><p class="sub">AI-powered code architecture diagrams</p></div></div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="border:2px solid var(--steel);border-radius:2px;padding:8px 13px;font-size:13px;color:var(--ink);">infinium_ai-agent</div>
+          <div class="btn btn-primary" style="padding:9px 17px;font-size:13.5px;"><i class="ico" data-icon="sparkles" style="width:15px;height:15px;"></i>Generate</div>
+        </div>
+      </header>
+
+      <div style="flex:1;padding:26px 30px;min-height:0;">
+        <div class="bp-card a-up" style="--d:0.42s;height:100%;padding:28px 34px;position:relative;overflow:hidden;display:flex;flex-direction:column;">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+            <span class="badge" style="border-color:var(--blue);color:var(--blue);font-family:var(--font-mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;">System Flow</span>
+            <span class="mono-xs">Generated 26 Aug 2026 · mermaid</span>
+          </div>
+
+          <div id="archWrap" style="position:relative;width:1240px;height:560px;margin:auto 0;">
+            <svg viewBox="0 0 1240 560" style="position:absolute;inset:0;width:100%;height:100%;overflow:visible;">
+              <g stroke="#1E3A8A" stroke-width="1.4" fill="none" opacity=".55" stroke-dasharray="440">
+                <path class="a-draw" style="--len:440;--d:1.33s" d="M180 58 L180 110 L155 110 L155 161"/>
+                <path class="a-draw" style="--len:440;--d:1.365s" d="M180 58 L180 110 L775 110 L775 161"/>
+                <path class="a-draw" style="--len:440;--d:1.4s" d="M620 58 L620 110 L775 110 L775 161"/>
+                <path class="a-draw" style="--len:440;--d:1.435s" d="M1060 58 L1060 110 L775 110 L775 161"/>
+                <path class="a-draw" style="--len:440;--d:2.03s" d="M155 219 L155 275 L250 275 L250 321"/>
+                <path class="a-draw" style="--len:440;--d:2.065s" d="M465 219 L465 275 L250 275 L250 321"/>
+                <path class="a-draw" style="--len:440;--d:2.1s" d="M775 219 L775 275 L620 275 L620 321"/>
+                <path class="a-draw" style="--len:440;--d:2.135s" d="M1085 219 L1085 275 L990 275 L990 321"/>
+                <path class="a-draw" style="--len:440;--d:2.73s" d="M250 379 L250 440 L250 440 L250 491"/>
+                <path class="a-draw" style="--len:640;--d:2.765s" d="M250 379 L250 440 L990 440 L990 491"/>
+                <path class="a-draw" style="--len:640;--d:2.8s" d="M620 379 L620 440 L250 440 L250 491"/>
+                <path class="a-draw" style="--len:440;--d:2.835s" d="M620 379 L620 440 L620 440 L620 491"/>
+              </g>
+              <circle r="4.5" fill="#38BDF8" class="arch-pulse"/>
+              <circle r="4.5" fill="#FACC15" class="arch-pulse p2"/>
+            </svg>
+
+            <div class="an tier1" style="--d:0.91s;left:80px;top:0;"><i class="ico" data-icon="layout"></i>Web Dashboard</div>
+            <div class="an tier1" style="--d:0.98s;left:520px;top:0;"><i class="ico" data-icon="code"></i>VSCode Extension</div>
+            <div class="an tier1" style="--d:1.05s;left:960px;top:0;"><i class="ico" data-icon="message"></i>Slack Bot</div>
+
+            <div class="an t2" style="--d:1.68s;left:65px;top:161px;">Auth Routes</div>
+            <div class="an t2" style="--d:1.75s;left:375px;top:161px;">Ingest Routes</div>
+            <div class="an t2" style="--d:1.82s;left:685px;top:161px;">Query Routes</div>
+            <div class="an t2" style="--d:1.89s;left:995px;top:161px;">Repo Routes</div>
+            <div class="band" style="--d:1.61s;">FastAPI Backend · Python</div>
+
+            <div class="an t3" style="--d:2.38s;left:150px;top:321px;"><i class="ico" data-icon="layers"></i>Ingestion Pipeline</div>
+            <div class="an t3" style="--d:2.45s;left:520px;top:321px;"><i class="ico" data-icon="brain"></i>RAG Engine</div>
+            <div class="an t3" style="--d:2.52s;left:890px;top:321px;"><i class="ico" data-icon="alert"></i>Feedback Store</div>
+
+            <div class="an t4" style="--d:3.08s;left:150px;top:491px;"><i class="ico" data-icon="database"></i>ChromaDB</div>
+            <div class="an t4" style="--d:3.15s;left:520px;top:491px;"><i class="ico" data-icon="sparkles"></i>Ollama LLMs</div>
+            <div class="an t4" style="--d:3.22s;left:890px;top:491px;"><i class="ico" data-icon="git-branch"></i>GitHub API</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .an{position:absolute;width:200px;height:58px;display:flex;align-items:center;justify-content:center;gap:9px;background:#fff;border:1.5px solid var(--blue);border-radius:2px;font-family:var(--font-display);font-size:14px;font-weight:600;color:var(--ink);letter-spacing:-.015em;box-shadow:0 0 0 1px rgba(30,58,138,.08);animation:aPop 0.525s var(--ease) backwards;animation-delay:var(--d);}
+    .an .ico{width:17px;height:17px;color:var(--blue);}
+    .an.t2{width:180px;border-color:var(--cyan);font-size:13.5px;}
+    .an.t2 .ico{color:var(--cyan);}
+    .an.t4{border-color:var(--amber);}
+    .an.t4 .ico{color:#B58900;}
+    .band{position:absolute;left:20px;right:20px;top:129px;height:110px;border:1.5px dashed var(--steel);border-radius:2px;display:flex;align-items:flex-start;justify-content:flex-end;padding:5px 10px;font-family:var(--font-mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);animation:aIn 0.56s var(--ease) backwards;animation-delay:var(--d);}
+    .arch-pulse{offset-path:path("M180 58 L180 110 L775 110 L775 161 L775 219 L775 275 L620 275 L620 321 L620 379 L620 440 L250 440 L250 491");offset-distance:0%;animation:pulseRun 2.38s var(--ease-io) 3.78s infinite;opacity:0;}
+    .arch-pulse.p2{offset-path:path("M1060 58 L1060 110 L775 110 L775 161 L775 219 L775 275 L620 275 L620 321 L620 379 L620 440 L620 491");animation-delay:4.48s;}
+    @keyframes pulseRun{0%{offset-distance:0%;opacity:0;}8%{opacity:1;}92%{opacity:1;}100%{offset-distance:100%;opacity:0;}}
+  </style>
+</section>
+
+<!-- ══════════════════ SCENE 7 — ANALYTICS ══════════════════ -->
+<section class="scene" data-scene data-name="Analytics" data-dur="7300">
+  <div class="app">
+    <aside class="side a-lf" style="--d:0.07s;width:250px;">
+      <div class="side-logo"><i class="ico" data-icon="brain"></i><div><h4>Infinium</h4><p class="bp-label" style="font-size:10px;margin-top:2px;">Knowledge AI</p></div></div>
+      <nav class="side-nav">
+        <div class="nav-i"><i class="ico" data-icon="layout"></i>Dashboard</div>
+        <div class="nav-i"><i class="ico" data-icon="folder"></i>Repositories</div>
+        <div class="nav-i"><i class="ico" data-icon="database"></i>Data Sources Indexing</div>
+        <div class="nav-i"><i class="ico" data-icon="message"></i>Query Interface</div>
+        <div class="nav-i"><i class="ico" data-icon="wand"></i>Code Refactor</div>
+        <div class="nav-i"><i class="ico" data-icon="book"></i>Document Agent</div>
+        <div class="nav-i on"><i class="ico" data-icon="line-chart"></i>Analytics</div>
+        <div class="nav-i"><i class="ico" data-icon="file-text"></i>PDF Viewer</div>
+        <div class="nav-i"><i class="ico" data-icon="brain"></i>Architecture</div>
+        <div class="nav-i"><i class="ico" data-icon="alert"></i>Feedback</div>
+      </nav>
+      <div class="side-foot"><div class="usr"><div class="avatar">FA</div><div><p style="font-size:13px;font-weight:500;color:var(--ink);">Fiza Amjad</p><p style="font-size:11.5px;color:var(--muted);margin-top:1px;">fiza@infinium.dev</p></div></div></div>
+    </aside>
+
+    <div class="main">
+      <header class="app-head a-dn" style="--d:0.21s;padding:18px 30px;">
+        <div class="hd-l"><span class="tick tall"></span><div><h1 style="font-size:28px;">Analytics Dashboard</h1><p class="sub">Knowledge trends across every indexed repository</p></div></div>
+        <div class="btn btn-primary" style="padding:9px 17px;font-size:13.5px;"><i class="ico" data-icon="download" style="width:15px;height:15px;"></i>Export</div>
+      </header>
+
+      <div class="app-body" style="padding:22px 30px;gap:18px;">
+        <div class="grid4">
+          <div class="bp-card a-up" style="--d:0.42s;padding:19px;">
+            <p class="mono-xs">Total Queries</p>
+            <p style="font-family:var(--font-display);font-size:31px;font-weight:700;color:var(--ink);margin-top:6px;font-variant-numeric:tabular-nums;letter-spacing:-.03em;" data-count="1847" data-count-start="560" data-count-dur="1120">0</p>
+            <div style="display:flex;align-items:center;gap:6px;margin-top:8px;"><i class="ico" data-icon="trending" style="width:13px;height:13px;color:var(--green);"></i><span style="font-size:11.5px;color:#059669;">+12.5%</span><span style="font-size:11.5px;color:var(--muted);">vs last period</span></div>
+          </div>
+          <div class="bp-card a-up" style="--d:0.49s;padding:19px;">
+            <p class="mono-xs">Accuracy Score</p>
+            <p style="font-family:var(--font-display);font-size:31px;font-weight:700;color:var(--ink);margin-top:6px;font-variant-numeric:tabular-nums;letter-spacing:-.03em;" data-count="91" data-count-start="630" data-count-dur="1120" data-count-suffix="%">0%</p>
+            <div style="width:104px;height:6px;background:var(--line);border-radius:99px;overflow:hidden;margin-top:11px;"><div class="a-grow" style="--d:0.77s;height:100%;width:91%;background:linear-gradient(90deg,var(--green),#059669);border-radius:99px;"></div></div>
+          </div>
+          <div class="bp-card a-up" style="--d:0.56s;padding:19px;">
+            <p class="mono-xs">Knowledge Chunks</p>
+            <p style="font-family:var(--font-display);font-size:31px;font-weight:700;color:var(--ink);margin-top:6px;font-variant-numeric:tabular-nums;letter-spacing:-.03em;" data-count="18432" data-count-start="700" data-count-dur="1330">0</p>
+            <div style="display:flex;align-items:center;gap:6px;margin-top:8px;"><i class="ico" data-icon="database" style="width:13px;height:13px;color:var(--violet);"></i><span style="font-size:11.5px;color:var(--muted);">Vectorized snippets</span></div>
+          </div>
+          <div class="bp-card a-up" style="--d:0.63s;padding:19px;">
+            <p class="mono-xs">Indexed Repos</p>
+            <p style="font-family:var(--font-display);font-size:31px;font-weight:700;color:var(--ink);margin-top:6px;font-variant-numeric:tabular-nums;letter-spacing:-.03em;" data-count="12" data-count-start="770" data-count-dur="980">0</p>
+            <div style="display:flex;align-items:center;gap:6px;margin-top:8px;"><i class="ico" data-icon="git-branch" style="width:13px;height:13px;color:var(--cyan);"></i><span style="font-size:11.5px;color:var(--muted);">Connected repositories</span></div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1.55fr 1fr;gap:18px;flex:1;min-height:0;">
+          <div class="bp-card a-up" style="--d:0.91s;padding:22px 24px;display:flex;flex-direction:column;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <span class="tick" style="height:20px;"></span>
+                <h2 style="font-family:var(--font-display);font-size:17px;font-weight:600;color:var(--ink);">Query Intelligence</h2>
+                <span class="badge" style="padding:2px 9px;font-size:11px;">7-day trend</span>
+              </div>
+              <div style="display:flex;gap:14px;">
+                <span style="display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);"><span style="width:8px;height:8px;border-radius:99px;background:var(--blue);"></span>Queries</span>
+                <span style="display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);"><span style="width:8px;height:8px;border-radius:99px;background:var(--cyan);"></span>Accuracy</span>
+              </div>
+            </div>
+            <svg viewBox="0 0 700 520" style="flex:1;width:100%;overflow:visible;">
+              <defs>
+                <linearGradient id="ag" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#1E3A8A" stop-opacity=".22"/>
+                  <stop offset="100%" stop-color="#1E3A8A" stop-opacity="0"/>
+                </linearGradient>
+                <clipPath id="wipe"><rect x="0" y="-30" width="700" height="580"/></clipPath>
+              </defs>
+              <g stroke="#E2E8F0" stroke-width="1">
+                <line x1="0" y1="35" x2="700" y2="35"/><line x1="0" y1="156" x2="700" y2="156"/>
+                <line x1="0" y1="277" x2="700" y2="277"/><line x1="0" y1="399" x2="700" y2="399"/>
+                <line x1="0" y1="503" x2="700" y2="503" stroke="#CBD5E1"/>
+              </g>
+              <g clip-path="url(#wipe)">
+                <path class="chart-fill" d="M0 402 L117 340 L233 371 L350 229 L467 274 L583 128 L700 69 L700 503 L0 503 Z" fill="url(#ag)"/>
+                <path class="chart-line" d="M0 402 L117 340 L233 371 L350 229 L467 274 L583 128 L700 69" fill="none" stroke="#1E3A8A" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+                <path class="chart-line2" d="M0 205 L117 187 L233 194 L350 166 L467 156 L583 135 L700 114" fill="none" stroke="#38BDF8" stroke-width="2.5" stroke-dasharray="7 6" stroke-linecap="round"/>
+              </g>
+              <g class="chart-dots">
+                <circle cx="0" cy="402" r="5" style="--d:1.75s"/><circle cx="117" cy="340" r="5" style="--d:1.82s"/>
+                <circle cx="233" cy="371" r="5" style="--d:1.89s"/><circle cx="350" cy="229" r="5" style="--d:1.96s"/>
+                <circle cx="467" cy="274" r="5" style="--d:2.03s"/><circle cx="583" cy="128" r="5" style="--d:2.1s"/>
+                <circle cx="700" cy="69" r="6.5" style="--d:2.17s" fill="#38BDF8"/>
+              </g>
+            </svg>
+            <div style="display:flex;justify-content:space-between;margin-top:9px;">
+              <span class="mono-xs">Mon</span><span class="mono-xs">Tue</span><span class="mono-xs">Wed</span><span class="mono-xs">Thu</span><span class="mono-xs">Fri</span><span class="mono-xs">Sat</span><span class="mono-xs">Sun</span>
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:18px;min-height:0;">
+            <div class="bp-card a-up" style="--d:1.015s;padding:20px 22px;flex:none;">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;"><span class="tick" style="height:20px;background:var(--blue);"></span><h2 style="font-family:var(--font-display);font-size:16px;font-weight:600;color:var(--ink);">Tech Stack Distribution</h2></div>
+              <div style="display:flex;flex-direction:column;gap:8px;">
+                <div class="bar"><span>TypeScript</span><span class="bt"><i style="--w:42%;--d:1.54s;background:var(--blue);"></i></span><b>42%</b></div>
+                <div class="bar"><span>Python</span><span class="bt"><i style="--w:31%;--d:1.624s;background:var(--cyan);"></i></span><b>31%</b></div>
+                <div class="bar"><span>JavaScript</span><span class="bt"><i style="--w:16%;--d:1.708s;background:var(--amber);"></i></span><b>16%</b></div>
+                <div class="bar"><span>CSS</span><span class="bt"><i style="--w:7%;--d:1.792s;background:var(--violet);"></i></span><b>7%</b></div>
+                <div class="bar"><span>Markdown</span><span class="bt"><i style="--w:4%;--d:1.876s;background:var(--muted);"></i></span><b>4%</b></div>
+              </div>
+            </div>
+            <div class="bp-card a-up" style="--d:1.12s;padding:20px 22px;flex:1;">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;"><span class="tick" style="height:20px;background:var(--blue);"></span><h2 style="font-family:var(--font-display);font-size:16px;font-weight:600;color:var(--ink);">Most Engaged Repositories</h2></div>
+              <div style="display:flex;flex-direction:column;gap:9px;">
+                <div class="eng" style="--d:2.31s"><span class="rk">1</span>infinium_ai-agent<b>812 queries</b></div>
+                <div class="eng" style="--d:2.394s"><span class="rk">2</span>infinium_fe<b>498 queries</b></div>
+                <div class="eng" style="--d:2.478s"><span class="rk">3</span>infinium_be<b>361 queries</b></div>
+                <div class="eng" style="--d:2.562s"><span class="rk">4</span>ai-cardiocare<b>176 queries</b></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .chart-line{stroke-dasharray:1000;animation:aDraw 1.4s var(--ease-io) 1.19s backwards;--len:1000;}
+    .chart-line2{stroke-dashoffset:0;animation:aIn 0.7s var(--ease) 1.82s backwards;}
+    .chart-fill{animation:aIn 0.84s var(--ease) 1.47s backwards;}
+    .chart-dots circle{fill:#1E3A8A;stroke:#fff;stroke-width:2;animation:aPop 0.35s var(--ease) backwards;animation-delay:var(--d);}
+    .bar{display:flex;align-items:center;gap:12px;font-size:12.5px;color:var(--ink);}
+    .bar>span:first-child{width:88px;flex:none;color:var(--muted);}
+    .bt{flex:1;height:9px;background:var(--line);border-radius:99px;overflow:hidden;}
+    .bt i{display:block;height:100%;width:var(--w);border-radius:99px;transform:scaleX(0);transform-origin:left;animation:cbarIn 0.63s var(--ease) both;animation-delay:var(--d);}
+    .bar b{width:38px;text-align:right;font-family:var(--font-mono);font-size:11.5px;color:var(--ink);font-variant-numeric:tabular-nums;}
+    .eng{display:flex;align-items:center;gap:11px;border:2px solid var(--line);border-radius:2px;padding:9px 12px;font-size:12.5px;color:var(--ink);animation:aRt 0.49s var(--ease) backwards;animation-delay:var(--d);}
+    .eng .rk{width:20px;height:20px;border-radius:2px;background:var(--tint);color:var(--blue);display:grid;place-items:center;font-family:var(--font-mono);font-size:11px;flex:none;}
+    .eng b{margin-left:auto;font-size:10.5px;font-weight:700;background:var(--tint);color:var(--blue);padding:2px 8px;border-radius:2px;}
+  </style>
+</section>
+
+<!-- ══════════════════ SCENE 8 — SURFACES ══════════════════ -->
+<section class="scene" data-scene data-name="Surfaces" data-dur="6600">
+  <div style="position:absolute;inset:0;padding:60px 96px;display:flex;flex-direction:column;justify-content:center;">
+    <div class="a-dn" style="--d:0.14s;display:flex;align-items:flex-end;justify-content:space-between;gap:30px;">
+      <div style="display:flex;align-items:center;gap:14px;">
+        <span class="tick tall" style="height:44px;"></span>
+        <div>
+          <h1 style="font-size:46px;font-weight:700;color:var(--ink);line-height:1.05;">Ten surfaces, one memory.</h1>
+          <p style="font-size:15px;color:var(--muted);margin-top:8px;">Every module reads from the same vector store and the same reasoning pipeline.</p>
+        </div>
+      </div>
+      <span class="bp-label" style="padding-bottom:6px;">Modules 01–10</span>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:18px;margin-top:44px;">
+      <div class="mod" style="--d:0.49s"><i class="ico" data-icon="layout"></i><b>Dashboard</b><span>System overview</span></div>
+      <div class="mod" style="--d:0.546s"><i class="ico" data-icon="folder"></i><b>Repositories</b><span>Connect &amp; manage</span></div>
+      <div class="mod" style="--d:0.602s"><i class="ico" data-icon="database"></i><b>Data Sources</b><span>Indexing control</span></div>
+      <div class="mod hot" style="--d:0.658s"><i class="ico" data-icon="message"></i><b>Query Interface</b><span>Reasoning chat</span></div>
+      <div class="mod" style="--d:0.714s"><i class="ico" data-icon="wand"></i><b>Code Refactor</b><span>Diff generation</span></div>
+      <div class="mod" style="--d:0.77s"><i class="ico" data-icon="book"></i><b>Document Agent</b><span>Auto-documentation</span></div>
+      <div class="mod" style="--d:0.826s"><i class="ico" data-icon="line-chart"></i><b>Analytics</b><span>Trends &amp; accuracy</span></div>
+      <div class="mod" style="--d:0.882s"><i class="ico" data-icon="file-text"></i><b>PDF Viewer</b><span>Document intelligence</span></div>
+      <div class="mod" style="--d:0.938s"><i class="ico" data-icon="brain"></i><b>Architecture</b><span>Diagram generation</span></div>
+      <div class="mod" style="--d:0.994s"><i class="ico" data-icon="alert"></i><b>Feedback</b><span>Accuracy loop</span></div>
+    </div>
+
+    <div style="height:250px;flex:none;position:relative;margin-top:46px;">
+      <svg viewBox="0 0 1408 250" style="position:absolute;inset:0;width:100%;height:100%;overflow:visible;">
+        <g stroke="#38BDF8" stroke-width="1.4" fill="none" stroke-dasharray="5 5" opacity=".7">
+          <path class="a-draw dash-run" style="--len:700;--d:1.75s;stroke-dasharray:5 5;" d="M180 168 L180 120 L704 120 L704 74"/>
+          <path class="a-draw" style="--len:120;--d:1.82s" stroke-dasharray="120" d="M704 168 L704 74"/>
+          <path class="a-draw dash-run" style="--len:700;--d:1.89s;stroke-dasharray:5 5;" d="M1228 168 L1228 120 L704 120 L704 74"/>
+        </g>
+      </svg>
+
+      <div class="hub" style="--d:1.54s;left:574px;width:260px;top:0;">
+        <i class="ico" data-icon="brain"></i>
+        <div><b>Infinium Core</b><span>RAG + reasoning</span></div>
+      </div>
+
+      <div class="client" style="--d:2.03s;left:60px;top:168px;"><i class="ico" data-icon="layout"></i>Web Dashboard</div>
+      <div class="client" style="--d:2.1s;left:584px;top:168px;"><i class="ico" data-icon="code"></i>VSCode Extension</div>
+      <div class="client" style="--d:2.17s;left:1108px;top:168px;"><i class="ico" data-icon="message"></i>Slack Bot</div>
+    </div>
+  </div>
+
+  <div class="anno blue a-in" style="--d:0.14s;bottom:26px;left:96px;">Fig. 09 — FR-009/010 · Integration surfaces</div>
+
+  <style>
+    .mod{border:1.5px solid var(--steel);border-radius:2px;padding:19px;display:flex;flex-direction:column;gap:9px;background:#fff;animation:aUp 0.56s var(--ease) backwards;animation-delay:var(--d);}
+    .mod .ico{width:23px;height:23px;color:var(--blue);}
+    .mod b{font-family:var(--font-display);font-size:15px;font-weight:600;color:var(--ink);letter-spacing:-.015em;}
+    .mod span{font-size:12px;color:var(--muted);}
+    .mod.hot{border-color:var(--blue);box-shadow:0 0 0 1px rgba(30,58,138,.1),0 6px 18px rgba(30,58,138,.08);}
+    .mod.hot .ico{color:var(--cyan);}
+    .hub{position:absolute;box-sizing:border-box;justify-content:center;display:flex;align-items:center;gap:14px;border:2px solid var(--blue);border-radius:2px;padding:16px 26px;background:#fff;box-shadow:0 6px 22px rgba(30,58,138,.12);animation:aPop 0.595s var(--ease) backwards;animation-delay:var(--d);}
+    .hub .ico{width:34px;height:34px;color:var(--blue);}
+    .hub b{display:block;font-family:var(--font-display);font-size:19px;font-weight:600;color:var(--ink);letter-spacing:-.02em;}
+    .hub span{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);}
+    .client{position:absolute;box-sizing:border-box;width:240px;justify-content:center;display:inline-flex;align-items:center;gap:10px;border:1.5px solid var(--cyan);border-radius:2px;padding:13px 22px;background:#fff;font-family:var(--font-display);font-size:15px;font-weight:600;color:var(--ink);letter-spacing:-.015em;animation:aUp 0.56s var(--ease) backwards;animation-delay:var(--d);}
+    .client .ico{width:19px;height:19px;color:var(--cyan);}
+  </style>
+</section>
+
+<!-- ══════════════════ SCENE 9 — OUTRO ══════════════════ -->
+<section class="scene" data-scene data-name="Workflow" data-dur="8000">
+  <svg viewBox="0 0 1600 900" style="position:absolute;inset:0;width:100%;height:100%;">
+    <line class="a-draw" style="--len:1600;--d:3.92s" x1="0" y1="450" x2="1600" y2="450" stroke="#1E3A8A" stroke-width="1" opacity=".18" stroke-dasharray="1600"/>
+    <circle class="a-pop" style="--d:4.13s" cx="800" cy="450" r="290" fill="none" stroke="#38BDF8" stroke-width="1" opacity=".2" stroke-dasharray="5 5"/>
+  </svg>
+
+  <div id="outroStats" style="position:absolute;left:0;right:0;top:0;display:grid;grid-template-columns:repeat(3,1fr);gap:60px;padding:0 140px;height:900px;align-content:center;text-align:center;">
+    <div class="a-up" style="--d:0.28s;">
+      <div style="font-family:var(--font-display);font-size:82px;font-weight:700;color:var(--blue);letter-spacing:-.045em;font-variant-numeric:tabular-nums;line-height:1;">Find</div>
+      <div style="width:72px;height:4px;background:var(--cyan);margin:18px auto;"></div>
+      <p style="font-size:16px;color:var(--muted);">Locate relevant code across indexed repositories</p>
+    </div>
+    <div class="a-up" style="--d:0.385s;">
+      <div style="font-family:var(--font-display);font-size:82px;font-weight:700;color:var(--cyan);letter-spacing:-.045em;font-variant-numeric:tabular-nums;line-height:1;">Trace</div>
+      <div style="width:72px;height:4px;background:var(--amber);margin:18px auto;"></div>
+      <p style="font-size:16px;color:var(--muted);">Read answers alongside retrieved source context</p>
+    </div>
+    <div class="a-up" style="--d:0.49s;">
+      <div style="font-family:var(--font-display);font-size:82px;font-weight:700;color:var(--amber);letter-spacing:-.045em;font-variant-numeric:tabular-nums;line-height:1;">Review</div>
+      <div style="width:72px;height:4px;background:var(--blue);margin:18px auto;"></div>
+      <p style="font-size:16px;color:var(--muted);">Review generated suggestions before applying them</p>
+    </div>
+  </div>
+
+  <div id="outroCard" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;opacity:0;">
+    <div class="ico" data-icon="brain" style="width:78px;height:78px;color:var(--blue);"></div>
+    <h1 style="font-size:80px;font-weight:600;color:var(--ink);letter-spacing:-.045em;line-height:1;">Infinium</h1>
+    <p style="font-size:17px;color:var(--muted);max-width:56ch;text-align:center;line-height:1.6;">Autonomous Reasoning Agent for Developer Knowledge Intelligence</p>
+    <div style="width:120px;height:1px;background:var(--steel);margin:12px 0;"></div>
+    <div style="text-align:center;display:flex;flex-direction:column;gap:9px;">
+      <p class="bp-label" style="font-size:11.5px;">Final Year Project · 2025–26</p>
+      <p style="font-size:15px;color:var(--ink);font-weight:500;">University of Engineering &amp; Technology, Lahore — Department of Computer Science</p>
+      <p style="font-size:13.5px;color:var(--muted);line-height:1.8;">Fiza Amjad (2022-CS-172) · Raveeha Mohsin (2022-CS-149) · Zainab Ashraf (2022-CS-181) · Tayyaba Afzal (2022-CS-134)<br>Supervisor — Syed Tehseen Ul Hasan Shah</p>
+    </div>
+  </div>
+
+  <div class="brackets a-in" style="--d:4.34s;position:absolute;inset:44px;pointer-events:none;"></div>
+  <div class="anno a-in" style="--d:4.48s;bottom:56px;left:96px;">infinium-fe.vercel.app</div>
+  <div class="anno blue a-in" style="--d:4.55s;bottom:56px;right:96px;">Fig. 10 — End</div>
+
+  <style>
+    .scene.is-active #outroStats{animation:statsOut 0.84s var(--ease) 3.64s both;}
+    @keyframes statsOut{to{opacity:0;transform:translateY(-40px) scale(.94);filter:blur(8px);}}
+    .scene.is-active #outroCard{animation:cardIn 0.91s var(--ease) 4.06s both;}
+    @keyframes cardIn{from{opacity:0;transform:translateY(34px) scale(.97);filter:blur(10px);}to{opacity:1;transform:none;filter:none;}}
+  </style>
+</section>
+
+  <!-- Sheet titleblock. Lives on the stage, not in a scene, so it holds
+       steady while the drawing inside the plate changes. -->
+  <div class="tb tb-head">
+    <span class="tb-rule"></span>
+    <span class="tb-ticks"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+    <div class="tb-brand">
+      <i class="ico" data-icon="brain"></i>
+      <div>
+        <div class="tb-word">Infinium</div>
+        <div class="tb-sub">Knowledge AI</div>
+      </div>
+    </div>
+    <div class="tb-r">
+      <div class="tb-scene" id="tbScene">Ident</div>
+      <div class="tb-fig" id="tbFig">Fig. 01 / 10</div>
+    </div>
+  </div>
+
+  <div class="tb tb-foot">
+    <span class="tb-rule"></span>
+    <span class="tb-ticks"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+    <div class="tb-note">UET Lahore · Dept. of Computer Science</div>
+    <!-- Kept short: the portfolio floats a runtime pill in this corner. -->
+    <div class="tb-note tb-r">Illustrative demo · sample data</div>
+  </div>
+
+  </div></div></div>
+
+  <footer class="transport">
+    <div class="track" id="track"></div>
+    <div class="tp-row">
+      <div class="tp-btns">
+        <button class="tp-b" id="btnPrev" title="Previous scene (←)"><i class="ico" data-icon="skip-back"></i></button>
+        <button class="tp-b play" id="btnPlay" title="Play / pause (Space)"><i class="ico fill" data-icon="pause"></i></button>
+        <button class="tp-b" id="btnNext" title="Next scene (→)"><i class="ico" data-icon="skip-fwd"></i></button>
+        <button class="tp-b" id="btnReplay" title="Restart (R)"><i class="ico" data-icon="rotate"></i></button>
+      </div>
+      <div class="chapters" id="chapters"></div>
+      <div class="tp-time"><b id="tCur">0:00</b> / <span id="tTot">0:00</span></div>
+      <div class="tp-btns">
+        <button class="tp-b" id="btnBare" title="Hide controls (H)"><i class="ico" data-icon="eye-off"></i></button>
+        <button class="tp-b" id="btnFull" title="Fullscreen (F)"><i class="ico" data-icon="expand"></i></button>
+      </div>
+    </div>
+    <div class="tp-keys"><kbd>Space</kbd> play · <kbd>←</kbd><kbd>→</kbd> scene · <kbd>R</kbd> restart · <kbd>H</kbd> hide UI · <kbd>F</kbd> fullscreen</div>
+  </footer>
+
+</div>
+
+<style id="runtime">
+  /* Scene animations are gated so every activation restarts them cleanly. */
+  .scene:not(.is-active) *{animation:none !important;}
+  .stage-frame{position:relative;}
+  .stage{position:absolute;top:0;left:0;transform-origin:top left;}
+  /* stroke-drawn brain */
+  .drawg path{stroke-dasharray:130;animation:aDraw 1.05s var(--ease-io) backwards;}
+  .drawg path:nth-child(1){animation-delay:0.21s}.drawg path:nth-child(2){animation-delay:0.294s}
+  .drawg path:nth-child(3){animation-delay:0.378s}.drawg path:nth-child(4){animation-delay:0.462s}
+  .drawg path:nth-child(5){animation-delay:0.504s}.drawg path:nth-child(6){animation-delay:0.546s}
+  .drawg path:nth-child(7){animation-delay:0.588s}.drawg path:nth-child(8){animation-delay:0.63s}
+  .drawg path:nth-child(9){animation-delay:0.672s}
+  /* streamed answer */
+  [data-stream].hyd .w{opacity:0;}
+  [data-stream].hyd .w.on{opacity:1;transition:opacity .22s ease-out;}
+  .caret[data-done]::after{display:none;}
+</style>
+
+<script>
+(function(){
+"use strict";
+
+/* ─────────────── Icons (Lucide geometry, 24×24) ─────────────── */
+var P = {
+  brain:'<path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/><path d="M17.599 6.5a3 3 0 0 0 .399-1.375"/><path d="M6.003 5.125A3 3 0 0 0 6.401 6.5"/><path d="M3.477 10.896a4 4 0 0 1 .585-.396"/><path d="M19.938 10.5a4 4 0 0 1 .585.396"/><path d="M6 18a4 4 0 0 1-1.967-.516"/><path d="M19.967 17.484A4 4 0 0 1 18 18"/>',
+  layout:'<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>',
+  folder:'<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>',
+  database:'<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/>',
+  message:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  wand:'<path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/>',
+  book:'<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>',
+  'line-chart':'<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m19 9-5 5-4-4-3 3"/>',
+  'file-text':'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
+  alert:'<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  'git-commit':'<circle cx="12" cy="12" r="3"/><line x1="3" x2="9" y1="12" y2="12"/><line x1="15" x2="21" y1="12" y2="12"/>',
+  'git-branch':'<line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
+  activity:'<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/>',
+  sparkles:'<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/>',
+  check:'<path d="M21.801 10A10 10 0 1 1 17 3.335"/><path d="m9 11 3 3L22 4"/>',
+  code:'<path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/>',
+  layers:'<path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/>',
+  users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  shield:'<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>',
+  clock:'<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  'arrow-right':'<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+  send:'<path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/>',
+  plus:'<path d="M5 12h14"/><path d="M12 5v14"/>',
+  chevron:'<path d="m6 9 6 6 6-6"/>',
+  'thumb-up':'<path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88"/>',
+  'thumb-down':'<path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88"/>',
+  download:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
+  trending:'<path d="M16 7h6v6"/><path d="m22 7-8.5 8.5-5-5L2 17"/>',
+  play:'<polygon points="6 3 20 12 6 21 6 3"/>',
+  pause:'<rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/>',
+  'skip-back':'<polygon points="19 20 9 12 19 4 19 20"/><line x1="5" x2="5" y1="19" y2="5"/>',
+  'skip-fwd':'<polygon points="5 4 15 12 5 20 5 4"/><line x1="19" x2="19" y1="5" y2="19"/>',
+  rotate:'<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
+  'eye-off':'<path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.8 10.8 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/>',
+  expand:'<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>'
+};
+
+function svg(inner, cls){
+  return '<svg viewBox="0 0 24 24"' + (cls ? ' class="' + cls + '"' : '') + '>' + inner + '</svg>';
+}
+Array.prototype.forEach.call(document.querySelectorAll('[data-icon]'), function(el){
+  var k = el.getAttribute('data-icon');
+  if (k === 'brain-draw') el.innerHTML = svg(P.brain, 'drawg');
+  else if (P[k]) el.innerHTML = svg(P[k]);
+});
+
+/* ─────────────── Build the vector field (scene 02) ─────────────── */
+var vg = document.getElementById('vecGrid');
+if (vg){
+  var COLS = 32, ROWS = 14, html = '';
+  for (var i = 0; i < COLS * ROWS; i++){
+    var col = i % COLS, row = Math.floor(i / COLS);
+    var order = (col * 0.042) + (row * 0.028) + (Math.random() * 0.3);
+    // a scatter of paler cells keeps the field reading as data, not a colour block
+    var r = Math.random();
+    var tone = r < 0.16 ? '#BAE6FD' : r < 0.28 ? '#7DD3FC' : '#38BDF8';
+    html += '<span class="vc" style="--d:' + (3.15 + order).toFixed(2) + 's;--c:' + tone + '"></span>';
+  }
+  vg.innerHTML = html;
+}
+
+/* ─────────────── Hydrate timeline-driven text ─────────────── */
+function hydrateStream(root){
+  var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+  var nodes = [], n;
+  while ((n = walker.nextNode())) nodes.push(n);
+  nodes.forEach(function(node){
+    var parts = node.nodeValue.split(/(\s+)/), frag = document.createDocumentFragment();
+    parts.forEach(function(p){
+      if (!p) return;
+      if (/^\s+$/.test(p)) frag.appendChild(document.createTextNode(p));
+      else { var s = document.createElement('span'); s.className = 'w'; s.textContent = p; frag.appendChild(s); }
+    });
+    node.parentNode.replaceChild(frag, node);
+  });
+  root.classList.add('hyd');
+}
+Array.prototype.forEach.call(document.querySelectorAll('[data-stream]'), hydrateStream);
+
+/* ─────────────── Director ─────────────── */
+var stage    = document.getElementById('stage');
+var scenes   = Array.prototype.slice.call(stage.querySelectorAll('[data-scene]'));
+var durs     = scenes.map(function(s){ return parseInt(s.dataset.dur, 10); });
+var total    = durs.reduce(function(a, b){ return a + b; }, 0);
+var reduced  = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+var idx = 0, t = 0, last = 0, playing = !reduced;
+var stopAt = 0;                       // ?stop=<ms> freezes the reel on one frame
+
+// Per-scene dynamic element caches
+var cache = scenes.map(function(sc){
+  return {
+    type:   Array.prototype.slice.call(sc.querySelectorAll('[data-type]')),
+    count:  Array.prototype.slice.call(sc.querySelectorAll('[data-count]')),
+    stream: Array.prototype.slice.call(sc.querySelectorAll('[data-stream]')).map(function(el){
+      return { el: el, words: Array.prototype.slice.call(el.querySelectorAll('.w')) };
+    })
+  };
+});
+
+function clamp(v){ return v < 0 ? 0 : v > 1 ? 1 : v; }
+function easeOut(p){ return 1 - Math.pow(1 - p, 3); }
+
+function tickDynamics(i, ms){
+  var c = cache[i];
+
+  c.type.forEach(function(el){
+    var txt = el.getAttribute('data-type');
+    var st  = +el.getAttribute('data-type-start') || 0;
+    var du  = +el.getAttribute('data-type-dur') || 1200;
+    var p   = clamp((ms - st) / du);
+    var n   = Math.round(p * txt.length);
+    if (el.textContent !== txt.slice(0, n)) el.textContent = txt.slice(0, n);
+    if (p >= 1) el.setAttribute('data-done', '1'); else el.removeAttribute('data-done');
+  });
+
+  c.count.forEach(function(el){
+    var target = +el.getAttribute('data-count');
+    var st = +el.getAttribute('data-count-start') || 0;
+    var du = +el.getAttribute('data-count-dur') || 1500;
+    var pre = el.getAttribute('data-count-prefix') || '';
+    var suf = el.getAttribute('data-count-suffix') || '';
+    var v = Math.round(easeOut(clamp((ms - st) / du)) * target);
+    var s = pre + (v >= 1000 ? v.toLocaleString('en-US') : v) + suf;
+    if (el.textContent !== s) el.textContent = s;
+  });
+
+  c.stream.forEach(function(o){
+    var st = +o.el.getAttribute('data-stream-start') || 0;
+    var du = +o.el.getAttribute('data-stream-dur') || 3000;
+    var n  = Math.round(clamp((ms - st) / du) * o.words.length);
+    for (var k = 0; k < o.words.length; k++){
+      var on = k < n;
+      if (o.words[k].classList.contains('on') !== on) o.words[k].classList.toggle('on', on);
+    }
+  });
+}
+
+/* Render the active scene at an exact offset without waiting for time to pass:
+   shift every animation-delay back by `ms` and hold it paused. Used by ?stop=. */
+function seekScene(ms){
+  var sc = scenes[idx];
+  var els = [sc].concat(Array.prototype.slice.call(sc.querySelectorAll('*')));
+  els.forEach(function(el){
+    var cs = getComputedStyle(el);
+    if (!cs.animationName || cs.animationName === 'none') return;
+    var shifted = cs.animationDelay.split(',').map(function(d){
+      return (parseFloat(d) - ms / 1000).toFixed(3) + 's';
+    }).join(', ');
+    el.style.animationDelay = shifted;
+  });
+}
+
+function activate(i, resetClock){
+  idx = i;
+  if (resetClock !== false) t = 0;
+  scenes.forEach(function(s){ s.classList.remove('is-active'); });
+  void scenes[i].offsetWidth;           // force reflow so gated animations restart
+  scenes[i].classList.add('is-active');
+  tickDynamics(i, t);
+  paintChapters();
+  paintTitleblock(i);
+}
+
+function go(i){
+  if (i < 0) i = 0;
+  if (i > scenes.length - 1) i = scenes.length - 1;
+  activate(i, true);
+}
+
+function setPlaying(v){
+  playing = v;
+  document.body.classList.toggle('paused', !v);
+  document.getElementById('btnPlay').innerHTML = svg(v ? P.pause : P.play);
+  document.getElementById('btnPlay').firstChild.style.fill = 'currentColor';
+  document.getElementById('btnPlay').firstChild.style.stroke = 'none';
+}
+
+/* ─────────────── Transport UI ─────────────── */
+var track = document.getElementById('track');
+var chaps = document.getElementById('chapters');
+var segs = [], chips = [];
+
+scenes.forEach(function(sc, i){
+  var seg = document.createElement('div');
+  seg.className = 'seg';
+  seg.style.flexGrow = String(durs[i]);
+  seg.innerHTML = '<span></span>';
+  seg.title = sc.dataset.name;
+  seg.addEventListener('click', function(){ go(i); if (!playing) setPlaying(true); });
+  track.appendChild(seg);
+  segs.push(seg.firstChild);
+
+  var chip = document.createElement('button');
+  chip.className = 'ch';
+  chip.textContent = (i < 9 ? '0' : '') + (i + 1) + ' ' + sc.dataset.name;
+  chip.addEventListener('click', function(){ go(i); if (!playing) setPlaying(true); });
+  chaps.appendChild(chip);
+  chips.push(chip);
+});
+
+function paintChapters(){
+  chips.forEach(function(c, i){ c.classList.toggle('on', i === idx); });
+  segs.forEach(function(s, i){
+    s.parentNode.classList.toggle('done', i < idx);
+    if (i > idx) s.style.width = '0%';
+  });
+}
+
+function fmt(ms){
+  var s = Math.max(0, Math.round(ms / 1000));
+  return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2);
+}
+var tCur = document.getElementById('tCur');
+document.getElementById('tTot').textContent = fmt(total);
+
+function paint(){
+  segs[idx].style.width = (clamp(t / durs[idx]) * 100) + '%';
+  var elapsed = 0;
+  for (var i = 0; i < idx; i++) elapsed += durs[i];
+  tCur.textContent = fmt(elapsed + t);
+}
+
+function frame(ts){
+  if (!last) last = ts;
+  var dt = ts - last;
+  last = ts;
+  if (dt > 200) dt = 16;                // tab was backgrounded — don't jump
+  if (playing){
+    t += dt;
+    if (stopAt && t >= stopAt){        // freeze on an exact frame (still capture)
+      t = stopAt;
+      setPlaying(false);
+    }
+    else if (t >= durs[idx]){
+      if (idx < scenes.length - 1){ activate(idx + 1, true); }
+      else { t = durs[idx]; setPlaying(false); }
+    }
+  }
+  tickDynamics(idx, t);
+  paint();
+  requestAnimationFrame(frame);
+}
+
+/* ─────────────── Controls ─────────────── */
+document.getElementById('btnPlay').addEventListener('click', function(){
+  if (!playing && idx === scenes.length - 1 && t >= durs[idx]) { go(0); setPlaying(true); }
+  else setPlaying(!playing);
+});
+document.getElementById('btnPrev').addEventListener('click', function(){ go(t > 900 ? idx : idx - 1); });
+document.getElementById('btnNext').addEventListener('click', function(){ go(idx + 1); });
+document.getElementById('btnReplay').addEventListener('click', function(){ go(0); setPlaying(true); });
+document.getElementById('btnBare').addEventListener('click', function(){ document.body.classList.toggle('bare'); });
+document.getElementById('btnFull').addEventListener('click', function(){
+  if (document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen();
+});
+
+document.addEventListener('keydown', function(e){
+  var k = e.key.toLowerCase();
+  if (e.code === 'Space'){ e.preventDefault(); document.getElementById('btnPlay').click(); }
+  else if (e.key === 'ArrowRight'){ e.preventDefault(); go(idx + 1); }
+  else if (e.key === 'ArrowLeft'){ e.preventDefault(); go(t > 900 ? idx : idx - 1); }
+  else if (k === 'r'){ go(0); setPlaying(true); }
+  else if (k === 'h'){ document.body.classList.toggle('bare'); }
+  else if (k === 'f'){ document.getElementById('btnFull').click(); }
+});
+
+/* ─────────────── Plate ───────────────
+   Each scene was composed against a 1600x900 canvas. Rather than re-laying out
+   ten scenes for the square sheet, every scene's children move into a plate of
+   exactly that size, which is then scaled and centred as one. Absolute
+   positions inside a scene now resolve against the plate, which is the canvas
+   they were written for. */
+Array.prototype.forEach.call(scenes, function(sc){
+  var plate = document.createElement('div');
+  plate.className = 'plate';
+  while (sc.firstChild) plate.appendChild(sc.firstChild);
+  sc.appendChild(plate);
+});
+
+/* ─────────────── Titleblock ─────────────── */
+var tbScene = document.getElementById('tbScene');
+var tbFig   = document.getElementById('tbFig');
+function paintTitleblock(i){
+  if (!tbScene) return;
+  tbScene.textContent = scenes[i].dataset.name || ('Scene ' + (i + 1));
+  tbFig.textContent = 'Fig. ' + String(i + 1).padStart(2, '0') + ' / ' +
+                      String(scenes.length).padStart(2, '0');
+}
+
+/* ─────────────── Fit the sheet to the viewport ─────────────── */
+var SW = 1200, SH = 1200;   // keep in step with --stage-w / --stage-h
+var wrap = document.querySelector('.stage-wrap');
+var sframe = document.querySelector('.stage-frame');
+function fit(){
+  var r = wrap.getBoundingClientRect();
+  /* The 8px inset is breathing room for the studio view. Bare, it is a dark
+     frame showing down the sides of a white sheet that is supposed to run to
+     the edge of the card, so bare gets none of it. */
+  var inset = document.body.classList.contains('is-bare') ? 0 : 8;
+  var s = Math.min((r.width - inset) / SW, (r.height - inset) / SH);
+  stage.style.transform = 'scale(' + s + ')';
+  sframe.style.width = (SW * s) + 'px';
+  sframe.style.height = (SH * s) + 'px';
+}
+window.addEventListener('resize', fit);
+document.addEventListener('fullscreenchange', function(){ setTimeout(fit, 60); });
+/* A framed reel can change size without the window doing anything - the
+   dossier expanding, a column reflowing. Watch the box, not just the window. */
+if (window.ResizeObserver) new ResizeObserver(fit).observe(wrap);
+
+/* ─────────────── Go ─────────────── */
+// Deep link: ?scene=6&bare=1 opens straight into a scene; &stop=<ms> freezes it for a still.
+var q = new URLSearchParams(location.search);
+var h = new URLSearchParams(location.hash.slice(1));
+var startScene = Math.min(scenes.length - 1, Math.max(0, (parseInt(q.get('scene'), 10) || 1) - 1));
+if (q.get('bare') === '1') document.body.classList.add('bare');
+
+/* The portfolio's contract, shared with every other reel in public/motion/:
+   ?embed=1 compacts the chrome for a small frame, ?chrome=0 removes it
+   entirely for a card thumbnail, and the host drives playback by message
+   because the frame is opaque from outside. */
+if (q.get('embed') === '1') document.body.classList.add('is-embed');
+if (q.get('chrome') === '0') document.body.classList.add('is-embed', 'is-bare');
+window.addEventListener('message', function(e){
+  var cmd = e.data && e.data.reel;
+  if (cmd === 'play') setPlaying(true);
+  else if (cmd === 'pause') setPlaying(false);
+  else if (cmd === 'restart'){ activate(0, true); setPlaying(true); }
+});
+stopAt = Math.max(0, parseInt(q.get('stop'), 10) || 0);
+
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
+fit();
+activate(startScene, true);
+if (stopAt){
+  t = Math.min(stopAt, durs[startScene]);
+  setPlaying(false);
+  seekScene(t);
+  tickDynamics(startScene, t);
+} else {
+  setPlaying(!reduced && q.get('paused') !== '1' && h.get('paused') !== '1');
+}
+requestAnimationFrame(frame);
+
+window.__reelInfo={total:total,durations:durs,names:scenes.map(s=>s.dataset.name)};window.__seekReel=function(ms){setPlaying(false);let acc=0,i=0;while(i<durs.length-1&&acc+durs[i]<=ms){acc+=durs[i];i++;}if(idx!==i)activate(i,true);t=Math.max(0,ms-acc);tickDynamics(i,t);paint();document.getAnimations().forEach(a=>{a.pause();a.currentTime=t;});return{scene:i,time:t};};
+})();
+</script>
+</body>
+</html>

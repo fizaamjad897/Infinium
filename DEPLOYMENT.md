@@ -167,7 +167,7 @@ JWT_EXPIRE_HOURS=24
 GITHUB_WEBHOOK_SECRET=<openssl rand -hex 32>
 
 # ── GitHub server-level token (lifts rate limit 60/hr → 5000/hr) ──
-GITHUB_API_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxx
+GITHUB_API_TOKEN=REPLACE_WITH_YOUR_TOKEN
 
 # ── Slack (optional) ──
 SLACK_SIGNING_SECRET=<from api.slack.com/apps>
